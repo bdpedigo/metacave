@@ -1,6 +1,3 @@
-[submodule ".github"]
-	path = cave-profile
-	url = https://github.com/CAVEconnectome/.github.git
 [submodule "submodules/MeshParty"]
 	path = submodules/MeshParty
 	url = https://github.com/CAVEconnectome/MeshParty.git
