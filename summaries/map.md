@@ -22,7 +22,6 @@ flowchart LR
     L2C[PCGL2Cache]
     SS[SkeletonService]
     TG[Tourguide]
-    DOF[dash_on_flask]
     NG[neuroglancer]
     %% libraries
     DADB([DynamicAnnotationDB])
@@ -36,6 +35,8 @@ flowchart LR
     %% storage
     IMGBKT[(imagery / segmentation bucket)]
     SKELBKT[(skeleton bucket)]
+    NJSDS[(Google Datastore)]
+    NJSBKT[(JSON state bucket)]
 
     AE -->|"DB operations"| DADB
     AE -->|"schema definitions"| EMAS
@@ -43,7 +44,10 @@ flowchart LR
     ME -->|"DB operations"| DADB
     ME -->|"schema definitions"| EMAS
     ME -->|"root ID lookups"| PCG
+    ME -->|"supervoxel lookups"| CV
     NJS -->|"backing store"| DSF
+    DSF -->|"entity storage"| NJSDS
+    DSF -->|"large value column"| NJSBKT
     PCG -->|"Pub/Sub events"| L2C
     PCG -->|"mesh computation"| ZM
     SS -->|"skeleton computation"| PCGS
@@ -53,7 +57,6 @@ flowchart LR
     DADB -->|"schema types"| EMAS
     MAC -->|"token validation"| MA
     AFIS -->|"permission groups"| MA
-    DOF -->|"session auth"| MAC
     CC -->|"annotations API"| AE
     CC -->|"materialization API"| ME
     CC -->|"segmentation API"| PCG
@@ -90,7 +93,7 @@ Authentication and authorization service layered on top of Google OAuth; manages
 Simple REST API for storing and retrieving Neuroglancer JSON viewer states, enabling shareable short-links. Does not interpret or validate the JSON content. Uses [datastore-flex](#datastore-flex) (Google Datastore with optional cloud bucket overflow) as its backing store.
 
 ### MaterializationEngine
-Creates time-locked "materialized" snapshots of annotations by resolving spatial points to [PyChunkedGraph](#pychunkedgraph-pcg) segmentation root IDs at specific timestamps; also exposes a REST API for querying those frozen databases. Does not generate annotations or manage proofreading — it only joins existing annotation data with a segmentation snapshot. Relies on [DynamicAnnotationDB](#dynamicannotationdb), [EMAnnotationSchemas](#emannotationschemas), and [PyChunkedGraph](#pychunkedgraph-pcg) for root ID lookups; powered by Celery workers and a Redis broker.
+Creates time-locked "materialized" snapshots of annotations by resolving spatial points to [PyChunkedGraph](#pychunkedgraph-pcg) segmentation root IDs at specific timestamps; also exposes a REST API for querying those frozen databases. Does not generate annotations or manage proofreading — it only joins existing annotation data with a segmentation snapshot. Relies on [DynamicAnnotationDB](#dynamicannotationdb), [EMAnnotationSchemas](#emannotationschemas), [PyChunkedGraph](#pychunkedgraph-pcg) for root ID lookups, and [cloud-volume](#cloud-volume) for supervoxel lookups at spatial coordinates; powered by Celery workers and a Redis broker.
 
 ### PyChunkedGraph (PCG)
 Core proofreading and segmentation management service that tracks a dynamic supervoxel agglomeration graph backed by Google BigTable, supporting concurrent multi-user edits. Does not store raw imagery, meshes, or annotations directly. The same codebase also hosts the Meshing service (mesh regeneration), which uses [zmesh](#zmesh) for mesh computation; publishes activity via Google Pub/Sub, which drives [PCGL2Cache](#pcgl2cache) and Meshing workers.
@@ -103,9 +106,6 @@ Generates, caches (in cloud storage buckets), and serves neuron skeletons in mul
 
 ### Tourguide (Guidebook v2)
 Flask web app for generating Neuroglancer links that guide proofreaders to tips and branches in neurons. Does not perform proofreading itself. Uses [pcg_skel](#pcg_skel) for PCG-aware skeletonization. *The README is extremely sparse (a few lines); full scope is inferred from the CAVE profile.*
-
-### dash_on_flask
-Framework for embedding Plotly Dash apps inside a Flask application with shared session authentication. Does not provide any connectomics-specific UI on its own — it is a deployment scaffold. Protected by [middle_auth](#middle_auth); used in CAVE to serve interactive connectivity and cell-type analysis dashboards.
 
 ---
 
