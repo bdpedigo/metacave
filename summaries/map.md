@@ -3,53 +3,39 @@
 High-level summaries of each project in the CAVE (Connectome Annotation Versioning Engine) stack.
 Each entry covers what the project does, what it does NOT do, and what other projects it integrates with.
 
---- 
+---
 
 ## Mind Map
 
 ```mermaid
 flowchart LR
-    subgraph svc["Micro-Services"]
-        AE[AnnotationEngine]
-        AFIS[AnnotationFrameworkInfoService]
-        MA[middle_auth]
-        NJS[NeuroglancerJsonServer]
-        ME[MaterializationEngine]
-        PCG["PyChunkedGraph (PCG)"]
-        L2C[PCGL2Cache]
-        SS[SkeletonService]
-        TG[Tourguide]
-        DOF[dash_on_flask]
-    end
-
-    subgraph lib["Libraries"]
-        DADB[DynamicAnnotationDB]
-        EMAS[EMAnnotationSchemas]
-        NGLUI[nglui]
-        DSF[datastore-flex]
-        MAC[middle_auth_client]
-    end
-
-    subgraph access["Access Tools"]
-        CC[CAVEclient]
-        MP[MeshParty]
-        PCGS[pcg_skel]
-        IC[ImageryClient]
-    end
-
-    subgraph adj["CAVE-adjacent"]
-        CV[cloud-volume]
-        NAV[navis]
-        NG[neuroglancer]
-        ZM[zmesh]
-    end
-
-    subgraph deploy["Deployment / Infrastructure"]
-        TGC[terraform-google-cave]
-        CHC[cave-helm-charts]
-        GT[global-template]
-        LT[local-template]
-    end
+    classDef user fill:#f5a623,stroke:#c47d0e,color:#000,font-weight:bold
+    %% user
+    USER((User)):::user
+    %% services
+    AE[AnnotationEngine]
+    AFIS[AnnotationFrameworkInfoService]
+    MA[middle_auth]
+    NJS[NeuroglancerJsonServer]
+    ME[MaterializationEngine]
+    PCG["PyChunkedGraph (PCG)"]
+    L2C[PCGL2Cache]
+    SS[SkeletonService]
+    TG[Tourguide]
+    DOF[dash_on_flask]
+    NG[neuroglancer]
+    %% libraries
+    DADB([DynamicAnnotationDB])
+    EMAS([EMAnnotationSchemas])
+    DSF([datastore-flex])
+    MAC([middle_auth_client])
+    CC([CAVEclient])
+    PCGS([pcg_skel])
+    CV([cloud-volume])
+    ZM([zmesh])
+    %% storage
+    IMGBKT[(imagery / segmentation bucket)]
+    SKELBKT[(skeleton bucket)]
 
     AE -->|"DB operations"| DADB
     AE -->|"schema definitions"| EMAS
@@ -68,8 +54,6 @@ flowchart LR
     MAC -->|"token validation"| MA
     AFIS -->|"permission groups"| MA
     DOF -->|"session auth"| MAC
-    NGLUI -->|"link sharing"| NJS
-    NGLUI -->|"skeleton upload / source info"| CV
     CC -->|"annotations API"| AE
     CC -->|"materialization API"| ME
     CC -->|"segmentation API"| PCG
@@ -77,16 +61,16 @@ flowchart LR
     CC -->|"datastack info"| AFIS
     CC -->|"viewer states"| NJS
     CC -->|"imagery / segmentation"| CV
-    MP -->|"mesh / skeleton I/O"| CV
-    MP -->|"PCG-linked meshes"| CC
-    IC -->|"image & seg cutouts"| CV
-    NAV -->|"data access"| CV
-    NAV -->|"CAVE data access"| CC
     NG -->|"graphene:// proofreading"| PCG
+    NG -->|"reads"| IMGBKT
+    NG -->|"reads"| SKELBKT
     CV -->|"graphene:// segmentation"| PCG
-    TGC -->|"config values via Helmfile"| CHC
-    GT -->|"global env scaffolding"| TGC
-    LT -->|"local env scaffolding"| TGC
+    CV -->|"reads"| IMGBKT
+    SS -->|"cache"| SKELBKT
+    USER -->|"programmatic access"| CC
+    USER -->|"visualization"| NG
+    USER -->|"proofreading guidance"| TG
+    USER -->|"direct I/O"| CV
 ```
 
 ---
