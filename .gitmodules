@@ -86,3 +86,6 @@
 	path = submodules/zmesh
 	url = https://github.com/seung-lab/zmesh.git
 	ignore = dirty
+[submodule "submodules/cave-github"]
+	path = submodules/cave-github
+	url = https://github.com/CAVEconnectome/.github
