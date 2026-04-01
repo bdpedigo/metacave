@@ -1,0 +1,90 @@
+[submodule ".github"]
+	path = cave-profile
+	url = https://github.com/CAVEconnectome/.github.git
+[submodule "submodules/MeshParty"]
+	path = submodules/MeshParty
+	url = https://github.com/CAVEconnectome/MeshParty.git
+[submodule "submodules/CAVEclient"]
+	path = submodules/CAVEclient
+	url = https://github.com/CAVEconnectome/CAVEclient.git
+[submodule "submodules/nglui"]
+	path = submodules/nglui
+	url = https://github.com/CAVEconnectome/nglui.git
+[submodule "submodules/PyChunkedGraph"]
+	path = submodules/PyChunkedGraph
+	url = https://github.com/CAVEconnectome/PyChunkedGraph.git
+[submodule "submodules/ImageryClient"]
+	path = submodules/ImageryClient
+	url = https://github.com/CAVEconnectome/ImageryClient.git
+[submodule "submodules/pcg_skel"]
+	path = submodules/pcg_skel
+	url = https://github.com/CAVEconnectome/pcg_skel.git
+[submodule "submodules/SkeletonService"]
+	path = submodules/SkeletonService
+	url = https://github.com/CAVEconnectome/SkeletonService.git
+[submodule "submodules/cave-helm-charts"]
+	path = submodules/cave-helm-charts
+	url = https://github.com/CAVEconnectome/cave-helm-charts.git
+[submodule "submodules/MaterializationEngine"]
+	path = submodules/MaterializationEngine
+	url = https://github.com/CAVEconnectome/MaterializationEngine.git
+[submodule "submodules/CAVEdeployment"]
+	path = submodules/CAVEdeployment
+	url = https://github.com/CAVEconnectome/CAVEdeployment.git
+[submodule "submodules/PCGL2Cache"]
+	path = submodules/PCGL2Cache
+	url = https://github.com/CAVEconnectome/PCGL2Cache.git
+[submodule "submodules/EMAnnotationSchemas"]
+	path = submodules/EMAnnotationSchemas
+	url = https://github.com/CAVEconnectome/EMAnnotationSchemas.git
+[submodule "submodules/AnnotationEngine"]
+	path = submodules/AnnotationEngine
+	url = https://github.com/CAVEconnectome/AnnotationEngine.git
+[submodule "submodules/middle_auth"]
+	path = submodules/middle_auth
+	url = https://github.com/CAVEconnectome/middle_auth.git
+[submodule "submodules/terraform-google-cave"]
+	path = submodules/terraform-google-cave
+	url = https://github.com/CAVEconnectome/terraform-google-cave.git
+[submodule "submodules/AnnotationFrameworkInfoService"]
+	path = submodules/AnnotationFrameworkInfoService
+	url = https://github.com/CAVEconnectome/AnnotationFrameworkInfoService.git
+[submodule "submodules/middle_auth_client"]
+	path = submodules/middle_auth_client
+	url = https://github.com/CAVEconnectome/middle_auth_client.git
+[submodule "submodules/local-template"]
+	path = submodules/local-template
+	url = https://github.com/CAVEconnectome/local-template.git
+[submodule "submodules/global-template"]
+	path = submodules/global-template
+	url = https://github.com/CAVEconnectome/global-template.git
+[submodule "submodules/DynamicAnnotationDB"]
+	path = submodules/DynamicAnnotationDB
+	url = https://github.com/CAVEconnectome/DynamicAnnotationDB.git
+[submodule "submodules/uwsgi_prometheus_workers"]
+	path = submodules/uwsgi_prometheus_workers
+	url = https://github.com/CAVEconnectome/uwsgi_prometheus_workers.git
+[submodule "submodules/Tourguide"]
+	path = submodules/Tourguide
+	url = https://github.com/CAVEconnectome/Tourguide.git
+[submodule "submodules/dash_on_flask"]
+	path = submodules/dash_on_flask
+	url = https://github.com/CAVEconnectome/dash_on_flask.git
+[submodule "submodules/NeuroglancerJsonServer"]
+	path = submodules/NeuroglancerJsonServer
+	url = https://github.com/CAVEconnectome/NeuroglancerJsonServer.git
+[submodule "submodules/datastore-flex"]
+	path = submodules/datastore-flex
+	url = https://github.com/CAVEconnectome/datastore-flex.git
+[submodule "submodules/cloud-volume"]
+	path = submodules/cloud-volume
+	url = https://github.com/seung-lab/cloud-volume.git
+[submodule "submodules/navis"]
+	path = submodules/navis
+	url = https://github.com/navis-org/navis.git
+[submodule "submodules/neuroglancer"]
+	path = submodules/neuroglancer
+	url = https://github.com/google/neuroglancer.git
+[submodule "submodules/zmesh"]
+	path = submodules/zmesh
+	url = https://github.com/seung-lab/zmesh.git
