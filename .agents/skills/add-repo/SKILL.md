@@ -18,7 +18,7 @@ Integrate a new (or updated) repository into [`summaries/map.md`](../../../summa
 
 ### 1. Read the CAVE profile
 
-Read [`cave-profile/README.md`](../../../cave-profile/README.md) to understand where this project fits in the overall architecture. Note which section it belongs to and which other projects it mentions as dependencies or consumers.
+Read [`submodules/cave-github/profile/README.md`](../../../submodules/cave-github/profile/README.md) to understand where this project fits in the overall architecture. Note which section it belongs to and which other projects it mentions as dependencies or consumers.
 
 ### 2. Read the project's documentation
 
