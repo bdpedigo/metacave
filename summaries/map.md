@@ -8,7 +8,85 @@ Each entry covers what the project does, what it does NOT do, and what other pro
 ## Mind Map
 
 ```mermaid
+flowchart LR
+    subgraph svc["Micro-Services"]
+        AE[AnnotationEngine]
+        AFIS[AnnotationFrameworkInfoService]
+        MA[middle_auth]
+        NJS[NeuroglancerJsonServer]
+        ME[MaterializationEngine]
+        PCG["PyChunkedGraph (PCG)"]
+        L2C[PCGL2Cache]
+        SS[SkeletonService]
+        TG[Tourguide]
+        DOF[dash_on_flask]
+    end
 
+    subgraph lib["Libraries"]
+        DADB[DynamicAnnotationDB]
+        EMAS[EMAnnotationSchemas]
+        NGLUI[nglui]
+        DSF[datastore-flex]
+        MAC[middle_auth_client]
+    end
+
+    subgraph access["Access Tools"]
+        CC[CAVEclient]
+        MP[MeshParty]
+        PCGS[pcg_skel]
+        IC[ImageryClient]
+    end
+
+    subgraph adj["CAVE-adjacent"]
+        CV[cloud-volume]
+        NAV[navis]
+        NG[neuroglancer]
+        ZM[zmesh]
+    end
+
+    subgraph deploy["Deployment / Infrastructure"]
+        TGC[terraform-google-cave]
+        CHC[cave-helm-charts]
+        GT[global-template]
+        LT[local-template]
+    end
+
+    AE -->|"DB operations"| DADB
+    AE -->|"schema definitions"| EMAS
+    AE -->|"authorization"| MAC
+    ME -->|"DB operations"| DADB
+    ME -->|"schema definitions"| EMAS
+    ME -->|"root ID lookups"| PCG
+    NJS -->|"backing store"| DSF
+    PCG -->|"Pub/Sub events"| L2C
+    PCG -->|"mesh computation"| ZM
+    SS -->|"skeleton computation"| PCGS
+    TG -->|"skeletonization"| PCGS
+    PCGS -->|"L2 graph"| PCG
+    PCGS -->|"shape statistics"| L2C
+    DADB -->|"schema types"| EMAS
+    MAC -->|"token validation"| MA
+    AFIS -->|"permission groups"| MA
+    DOF -->|"session auth"| MAC
+    NGLUI -->|"link sharing"| NJS
+    NGLUI -->|"skeleton upload / source info"| CV
+    CC -->|"annotations API"| AE
+    CC -->|"materialization API"| ME
+    CC -->|"segmentation API"| PCG
+    CC -->|"skeletons API"| SS
+    CC -->|"datastack info"| AFIS
+    CC -->|"viewer states"| NJS
+    CC -->|"imagery / segmentation"| CV
+    MP -->|"mesh / skeleton I/O"| CV
+    MP -->|"PCG-linked meshes"| CC
+    IC -->|"image & seg cutouts"| CV
+    NAV -->|"data access"| CV
+    NAV -->|"CAVE data access"| CC
+    NG -->|"graphene:// proofreading"| PCG
+    CV -->|"graphene:// segmentation"| PCG
+    TGC -->|"config values via Helmfile"| CHC
+    GT -->|"global env scaffolding"| TGC
+    LT -->|"local env scaffolding"| TGC
 ```
 
 ---
