@@ -7,6 +7,11 @@ Each entry covers what the project does, what it does NOT do, and what other pro
 
 ## Mind Map
 
+<!--
+### Nodes omitted from diagram (ignored for now)
+- **dash_on_flask**: Flask + Dash template service; uses middle_auth_client for auth but is a deployment template rather than a core CAVE service.
+-->
+
 ```mermaid
 flowchart LR
     classDef user fill:#f5a623,stroke:#c47d0e,color:#000,font-weight:bold
@@ -37,8 +42,10 @@ flowchart LR
     SKELBKT[(skeleton bucket)]
     NJSDS[(Google Datastore)]
     NJSBKT[(JSON state bucket)]
+    PGDB[(PostgreSQL/PostGIS)]
 
     AE -->|"DB operations"| DADB
+    DADB -->|"SQL reads/writes"| PGDB
     AE -->|"schema definitions"| EMAS
     AE -->|"authorization"| MAC
     ME -->|"DB operations"| DADB
@@ -50,6 +57,7 @@ flowchart LR
     DSF -->|"large value column"| NJSBKT
     PCG -->|"Pub/Sub events"| L2C
     PCG -->|"mesh computation"| ZM
+    PCG -->|"mesh writes"| IMGBKT
     SS -->|"skeleton computation"| PCGS
     TG -->|"skeletonization"| PCGS
     PCGS -->|"L2 graph"| PCG
@@ -57,6 +65,12 @@ flowchart LR
     DADB -->|"schema types"| EMAS
     MAC -->|"token validation"| MA
     AFIS -->|"permission groups"| MA
+    ME -->|"authorization"| MAC
+    NJS -->|"authorization"| MAC
+    PCG -->|"authorization"| MAC
+    L2C -->|"authorization"| MAC
+    SS -->|"authorization"| MAC
+    TG -->|"authorization"| MAC
     CC -->|"annotations API"| AE
     CC -->|"materialization API"| ME
     CC -->|"segmentation API"| PCG
