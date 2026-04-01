@@ -85,3 +85,4 @@
 [submodule "submodules/zmesh"]
 	path = submodules/zmesh
 	url = https://github.com/seung-lab/zmesh.git
+	ignore = dirty
