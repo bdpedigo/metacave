@@ -55,11 +55,11 @@ A new Flask service backed by Postgres, following the standard CAVE service patt
 **Core identity:**
 - Datastack name
 - Logical table name (stable identifier grouping all versions/variants)
-- Materialization version (FK to materialization version)
+- Materialization version
 - Variant tag (free-form; distinguishes same-version physical variants, e.g. "partitioned by pre_root_id" vs. "partitioned by post_root_id")
 
 **Storage:**
-- Storage format (`iceberg` | `lance` | `parquet`)
+- Storage format (`iceberg` | `delta` | `lance` | `parquet`)
 - Bucket path / catalog URI
 - `access_type` (`managed` | `open`)
 
@@ -127,11 +127,10 @@ Registration requires an elevated permission (e.g. a `catalog:write` middle_auth
 | Format | Use case | Rationale |
 |--------|----------|-----------|
 | **Apache Iceberg** (parquet-snappy) | Long-term mat dumps, flat-tabular feature sets | Broadest ecosystem (DuckDB, Spark, BigQuery external tables, Polars, PyIceberg). Strong partition pruning via column stats in metadata. |
-| **Lance** | Feature sets requiring ANN similarity search | Native approximate nearest-neighbor index. Only justified if vector similarity queries are a real use case. |
+| **Delta Lake** | Alternative to Iceberg for mat dumps | Similar capabilities; more Databricks-centric ecosystem. Prefer Iceberg unless Delta is already in use elsewhere in the pipeline. |
+| **Lance** | Feature sets requiring ANN similarity search | Native approximate nearest-neighbor index; best for vector similarity workloads on embeddings. |
 
 Partition long-term mat dumps by root ID range.
-
-> **[FEEDBACK — Format complexity vs. benefit]** Supporting both Iceberg and Lance doubles the adapter, testing, and documentation surface. The primary access pattern described throughout this document is "join by root_id" — which Iceberg handles perfectly. Unless there are concrete, near-term user stories for ANN similarity search on embeddings, **start with Iceberg only** and add Lance support when a real use case materializes. "We might want ANN someday" is not sufficient justification for day-one complexity.
 
 > **[FEEDBACK — Iceberg catalog backend is a blocking decision]** Iceberg tables require a catalog (in the Iceberg sense — resolves table names to metadata file locations). Options: REST catalog (self-hosted), Hadoop-style file I/O catalog (simpler, uses convention-based paths on GCS), Nessie, or BigLake Metastore (GCP-managed). This is called out in Open Questions but is actually a blocking architecture decision that determines deployment topology. Elevate this to a design decision and resolve it before implementation. The file I/O catalog (`HadoopCatalog` equivalent) is simplest for MVP — no additional service to deploy — but loses table-level locking and atomic renames.
 
@@ -185,37 +184,49 @@ The following tools were evaluated for the catalog backend:
 
 | Tool | Strengths | Weaknesses for CAVE | Verdict |
 |------|-----------|---------------------|---------|
-| **Unity Catalog OSS** | REST API, schema tracking, Iceberg/Delta support, lightweight | No CAVE-specific semantic roles; no middle_auth integration; limited non-tabular support | Possible for tabular-only MVP; requires wrapping |
-| **Project Nessie** | Git-like table versioning, Iceberg-native | Iceberg/Delta only; no general metadata model | Good Iceberg catalog backend, poor metadata registry |
+| **Unity Catalog OSS** | REST API, schema tracking, Iceberg/Delta/UniForm support, credential vending (v0.2+), native SQL views (v0.5+), modular auth (v0.5+), DuckDB + Trino integration, lightweight, Helm chart | No CAVE semantic roles; no middle_auth integration (requires wrapping); lineage is `❓` on roadmap | Strongest off-the-shelf option for tabular-only MVP; see view support analysis below |
+| **Project Nessie** | Git-like table versioning, Iceberg-native | Iceberg/Delta only; no general metadata model | Good Iceberg catalog backend candidate; poor metadata registry |
 | **OpenMetadata** | Custom entity types, connector framework, lineage | Heavy (requires Elasticsearch); enterprise-oriented | Over-engineered for CAVE's scale |
 | **DataHub** | Flexible metadata model | Very heavy (Kafka + Elasticsearch) | Far more than needed |
 | **Marquez** | Lightweight lineage tracking | Lineage only; no discoverability or schema features | Too narrow |
 
-**Decision: build a custom lightweight service.** The registry itself is simple CRUD. What's novel is the CAVE-specific logic: middle_auth integration, semantic role metadata, EMAnnotationSchemas interop, and signed-URL issuance. Off-the-shelf tools would require as much wrapping and customization as building from scratch, while adding operational dependencies (Elasticsearch, Kafka) that CAVE doesn't otherwise need.
+### View support as a build-vs-buy factor
 
-> **[FEEDBACK — Nessie as Iceberg catalog backend]** Even though Nessie isn't suitable as the metadata registry, it could serve as the *Iceberg catalog backend* (the thing that resolves table names to metadata.json locations). This is a different role than the CAVE catalog service — Nessie would sit between PyIceberg and GCS, while the CAVE catalog sits between users and Nessie. Worth evaluating separately from the build-vs-buy decision for the registry.
+As of v0.5, Unity Catalog OSS ships native view support: basic Spark SQL views, multi-dialect views, Iceberg view support, and materialized views are all marked `done` on the roadmap. This is directly relevant because views are currently listed as a future extension for a custom-built catalog (§8.2), meaning building from scratch defers view support to v2, while Unity Catalog provides it out of the box.
+
+**Unity Catalog also provides:**
+- **Credential vending** (temporary credentials for tables and volumes, since v0.2) — this is exactly the §3.3 "proxy the credential, not the data" pattern.
+- **Iceberg REST catalog compatibility** — resolves the Iceberg catalog backend question (§10, item 1) in favor of a well-supported open standard rather than a file I/O catalog.
+- **DuckDB + Trino integrations** — the client-side query path (§4, `open()`) works without custom adapter code.
+
+**What Unity Catalog still doesn't provide:**
+- CAVE semantic role annotations (join keys, EMAnnotationSchemas interop) — must be layered on regardless.
+- middle_auth integration — v0.5 adds modular auth (OAuth/OIDC), which could be wired to middle_auth, but this is non-trivial custom work.
+- Lineage (`❓` on roadmap, not committed).
+- Lance support (Unity Catalog is tabular-first; Lance would remain outside it).
+
+**Updated assessment:** the view support and credential vending significantly close the gap between Unity Catalog and a custom build for the tabular-only v1 scope. The remaining delta is (a) the middle_auth wrapper, (b) CAVE semantic role metadata (custom API layer on top of UC), and (c) lineage. The key question is whether those three pieces are better implemented as a thin CAVE wrapper around Unity Catalog, or as a standalone service that reimplements what Unity Catalog provides. **This decision should be made explicitly before implementation begins**, ideally with a time-boxed prototype of a UC-backed CAVE catalog to assess the wrapper complexity. The original "build custom" verdict remains defensible but is no longer obvious given UC's v0.5 capabilities.
+
+> **[NOTE — Nessie as Iceberg catalog backend]** If building custom, Nessie is worth evaluating as the *Iceberg catalog backend* (the thing that resolves table names to metadata.json locations on GCS) — a different role from the CAVE registry layer. Unity Catalog, if chosen, subsumes this role via its Iceberg REST catalog compatibility.
 
 ---
 
 ## 6. Boundary with MaterializationEngine
 
-> **[FEEDBACK — Missing section]** The document doesn't specify the boundary between the catalog service and MaterializationEngine. ME already knows about materialization versions and currently writes the CSV dumps. Key questions:
-> - Does ME trigger the Iceberg export and then call the catalog registration API? Or does the catalog service trigger ME to export?
-> - Does ME's existing `MATERIALIZATION_UPLOAD_BUCKET_PATH` become the catalog's managed storage, or is there a separate bucket?
-> - Does the catalog service need to query ME to validate that a materialization version exists and is marked "long-term"?
->
-> The cleanest boundary is probably: **ME owns the export pipeline** (writes Iceberg tables to GCS), **catalog owns the registry** (ME calls the catalog registration API after a successful export). This keeps ME's existing responsibilities intact and avoids the catalog service needing to understand export mechanics.
+**ME owns the export pipeline; catalog owns the registry.**
+
+- MaterializationEngine writes Iceberg tables to GCS as part of its existing long-term dump workflow (replacing the current CSV export).
+- After a successful export, ME calls the catalog registration API to create or update the catalog record for that materialization version.
+- The catalog service has no knowledge of export mechanics and never triggers ME.
+- The catalog service may query ME to validate that a materialization version exists and is marked "long-term" at registration time (see registration validation, §10 item 3).
+
+**Open storage question:** whether ME's existing `MATERIALIZATION_UPLOAD_BUCKET_PATH` bucket becomes the catalog's managed storage, or a separate bucket is created for catalog-managed assets, still needs to be decided. A separate bucket gives cleaner IAM boundaries (the catalog service's signing key is scoped only to catalog assets) but adds operational overhead.
 
 ---
 
 ## 7. Migration Path for Existing Data
 
-> **[FEEDBACK — Missing section]** The document describes the future state (Iceberg/Lance tables) but doesn't address existing gzipped CSV dumps in GCS. Options:
-> 1. **Convert existing CSVs to Iceberg** and register them in the catalog (one-time migration).
-> 2. **Register CSVs as-is** with `format: parquet_csv_gz` or similar, accepting that they won't support partial query.
-> 3. **Leave existing CSVs unregistered** and only catalog new exports going forward.
->
-> Option 1 is the most valuable (existing data becomes queryable) but has a cost. At minimum, decide whether backward compatibility with existing dumps is a requirement.
+A new export pipeline will write Iceberg dumps to catalog-managed storage starting from a pre-specified materialization version (chosen at implementation time). Existing gzipped CSV dumps are not migrated or registered. The catalog simply has no records for versions prior to the cutoff — this is acceptable; users needing older data continue to use the existing CSVs directly.
 
 ---
 
@@ -244,14 +255,16 @@ The catalog could generalize to non-tabular assets by introducing **adapters** �
 
 ### 8.2 Logical views
 
+> **See §5 for the primary treatment of views as a build-vs-buy factor.** Unity Catalog OSS v0.5+ ships native multi-dialect SQL views, Iceberg view support, and materialized views. If Unity Catalog is chosen as the catalog backend, view support is not a future extension — it is available from the start. The options below are only relevant if building a custom service.
+
 A catalog record could represent a **view** — a named SQL query over registered tables, executed locally by DuckDB.
 
 **Options considered:**
-- **Option A (recommended for now):** no views; the `enrich()` helper covers the dominant join-by-root-id use case. Users write their own SQL for anything more complex.
-- **Option B (future):** SQL views stored in the catalog, executed locally by DuckDB. Discoverable and shareable. Requires issuing signed URLs for all source tables simultaneously (TTL coordination).
+- **Option A:** no views; the `enrich()` helper covers the dominant join-by-root-id use case. Users write their own SQL for anything more complex.
+- **Option B:** SQL views stored in the catalog, executed locally by DuckDB. Discoverable and shareable. Requires issuing signed URLs for all source tables simultaneously (TTL coordination).
 - **Option C (distant future):** server-side query engine (Trino, DuckDB server). Maximum interoperability but significant infrastructure.
 
-Start with Option A. The upgrade path A → B → C is clean — SQL text stored in view records can later be handed to a server-side engine.
+For a custom-built catalog, start with Option A; add Option B when needed. The upgrade path A → B → C is clean — SQL text stored in view records can later be handed to a server-side engine. For a Unity Catalog-backed catalog, skip directly to a UC-native view registration workflow.
 
 ---
 
@@ -272,21 +285,21 @@ Start with Option A. The upgrade path A → B → C is clean — SQL text stored
 
 ### Blocking (must resolve before implementation)
 
-1. **Iceberg catalog backend:** REST catalog (self-hosted), file I/O catalog (GCS path conventions), Nessie, or BigLake Metastore? Determines deployment topology and operational burden.
-2. **ME ↔ catalog boundary:** does ME trigger Iceberg export and call the catalog registration API, or does the catalog service orchestrate exports? (See §6.)
+1. **Build vs. buy (Unity Catalog):** Unity Catalog v0.5+ substantially closes the gap with a custom build (credential vending, native views, Iceberg REST catalog, modular auth, DuckDB integration). Recommend a time-boxed prototype wrapping UC before committing to a custom service. See §5.
+2. **Iceberg catalog backend:** if building custom — REST catalog (self-hosted), file I/O catalog (GCS path conventions), Nessie, or BigLake Metastore? If using Unity Catalog, this is resolved via UC's Iceberg REST catalog compatibility. Determines deployment topology and operational burden.
+2. **ME storage bucket:** use ME's existing `MATERIALIZATION_UPLOAD_BUCKET_PATH` or a dedicated catalog-managed bucket? (See §6.)
 3. **Registration validation strictness:** how much should the catalog validate on registration? Spectrum ranges from "store what the registrant provides" to "auto-detect schema, verify mat version exists and is long-term, validate annotation table references." More enforcement = higher catalog quality but more friction. Recommend: validate mat version exists + attempt schema read from data; defer annotation-table-reference validation.
 
 ### Important (should resolve before v1 GA)
 
 4. **Feature set versioning misalignment:** when a feature set's computation schedule doesn't align with materialization versions, how is it linked? Options: pin to nearest version, store independently with a timestamp and a `compatible_versions` range, or require feature set producers to always target a specific mat version.
 5. **Record immutability policy:** can a `published` record be mutated, or must changes go through deprecate-and-replace? (See §3.2.)
-6. **Existing CSV migration:** convert, register as-is, or abandon? (See §7.)
-7. **Signed URL TTL and scope:** what expiry, what prefix scope, how to handle URL sharing?
+6. **Signed URL TTL and scope:** what expiry, what prefix scope, how to handle URL sharing?
 
 ### Deferred (v2 and beyond)
 
 8. **Non-tabular asset scope:** when and how to extend to meshes, precomputed volumes, etc., and what boundary with AFIS. (See §8.1.)
-9. **Logical views:** when does `enrich()` become insufficient, triggering the need for stored views? (See §8.2.)
+9. **Logical views:** for a custom-built catalog, when does `enrich()` become insufficient? For a UC-backed catalog, views are available from day one. (See §5 and §8.2.)
 10. **`delegated` access type:** credential brokering for external-but-not-public resources. (See §3.3.)
 11. **Server-side query execution:** Trino / DuckDB server as a future upgrade from client-side execution.
 12. **Catalog-driven exports:** should the catalog service eventually trigger export jobs, or always remain a passive registry?
@@ -306,8 +319,56 @@ Start with Option A. The upgrade path A → B → C is clean — SQL text stored
 | **Scope creep into universal asset registry** | High | Delays v1 delivery, complicates AFIS boundary | Hard scope boundary: v1 = tabular only. Non-tabular is a separate design phase. |
 | **Schema overload deters registration** | Medium | Low adoption; catalog becomes empty | Minimal required fields for v1. Optional fields can be backfilled. |
 | **Two sources of truth (catalog vs. format)** | Medium | Stale metadata, user confusion | Format-authoritative principle (§2). Catalog caches schema snapshots for display only. |
-| **Iceberg catalog backend choice locks in infrastructure** | Medium | Costly migration if wrong choice | Start with file I/O catalog (simplest); migrate to REST catalog if locking/atomicity becomes an issue. |
+| **Unity Catalog wrapper complexity underestimated** | Medium | Delayed v1 delivery | Time-box prototype of UC wrapper before committing; see §5. |
 | **DuckDB dependency fragments CAVEclient user base** | Medium | Users without DuckDB can't use `open()`/`enrich()` | Optional extras group. Ensure `list()` and `describe()` work without DuckDB. |
 | **Signed URL abuse / egress cost** | Low-Medium | Unexpected cloud bills | Access logging, per-user quotas, tiered storage for cold data. |
 | **No user validation of `enrich()` pattern** | Medium | Build enrichment API that nobody uses as designed | Validate with 2-3 target users before committing to the `enrich()` interface. |
 | **Feature set versioning misalignment** | High | Confusion about which feature set matches which mat version | Resolve design question #4 before implementation. |
+
+---
+
+## 12. Short-Term Implementation Plan
+
+### Decisions fixed for v1
+
+- **Backend:** Unity Catalog OSS as the metadata store (registry, credential vending, views, Iceberg REST catalog).
+- **Storage:** a new dedicated GCS bucket, owned and configured by CAVE, used for all catalog-managed assets. Separate from `MATERIALIZATION_UPLOAD_BUCKET_PATH`.
+- **Formats:** Iceberg (long-term mat dumps and flat-tabular feature sets), Delta Lake (alternative to Iceberg where already in use in a pipeline), Lance (feature sets requiring ANN).
+- **Registration validation:** verify the materialization version exists in ME and is marked long-term; validate any referenced annotation table/column names against CAVE (AnnotationEngine or EMAnnotationSchemas).
+- **Cutoff:** catalog starts from a pre-specified materialization version; no backfill of existing CSV dumps.
+
+### Phase 1 — Infrastructure
+
+1. **Provision Unity Catalog instance.** Deploy UC (Helm chart) in the CAVE cluster. Configure authentication to forward to middle_auth (UC v0.5 modular auth). Provision the dedicated catalog GCS bucket and grant UC's service account write access.
+2. **Add `terraform-google-cave` resources.** Catalog bucket, UC service, IAM bindings (UC service account → bucket; middle_auth group `catalog:write` → UC registration privileges).
+3. **Validate UC credential vending end-to-end.** Confirm that a UC-issued temporary credential scoped to the catalog bucket is usable by DuckDB/PyIceberg to read a test Iceberg table.
+
+### Phase 2 — Materialization export pipeline
+
+4. **Add Iceberg export step to MaterializationEngine.** After a long-term snapshot is marked AVAILABLE, ME writes the merged annotation table(s) as an Iceberg table (parquet-snappy, partitioned by root ID range) to the catalog bucket under a stable path convention: `gs://{catalog_bucket}/{datastack}/{table_name}/mat{version}/`.
+5. **Implement catalog registration call in ME.** After a successful export, ME calls UC's table registration API (or CAVE catalog's registration endpoint wrapping UC) with the required record fields: datastack, logical table name, materialization version, storage path, `access_type: managed`, status: `published`.
+6. **Implement registration validation.** The registration endpoint verifies: (a) the materialization version exists in ME and is marked long-term; (b) any referenced annotation table/column names resolve against AnnotationEngine or EMAnnotationSchemas.
+
+### Phase 3 — CAVE catalog service (UC wrapper)
+
+7. **New CAVE catalog service.** A thin Flask service that wraps Unity Catalog's REST API. Responsibilities:
+   - Translates CAVE-specific concepts (datastacks, semantic roles, lineage fields) into UC metadata fields.
+   - Enforces `catalog:write` permission via `middle_auth_client` before proxying registration calls to UC.
+   - Enforces datastack read permission before issuing UC credential vending requests.
+   - Runs the registration validation logic (step 6).
+   - Exposes a stable CAVE-versioned API so clients are insulated from UC API changes.
+8. **Helm chart, Docker image, `terraform-google-cave` additions** for the new service.
+
+### Phase 4 — CAVEclient integration
+
+9. **`client.catalog` sub-client.** Implement in CAVEclient as an optional extras group (`pip install caveclient[catalog]`). Core methods for v1:
+   - `list(datastack, [table_name], [version], [tags])` — no heavy dependencies required.
+   - `describe(datastack, table_name, version)` — no heavy dependencies required.
+   - `open(datastack, table_name, version, [variant])` — requires PyIceberg or DuckDB; returns a ready-to-query object backed by UC-issued credentials.
+   - `query(datastack, table_name, version, root_ids=...)` — thin filter wrapper over `open()`.
+10. **`enrich()` helper.** Validate the join-by-root-id pattern with 2-3 target users before committing to the interface. Implement after `open()` and `query()` are stable.
+
+### Phase 5 — Feature set registration
+
+11. **Documentation and registration guide** for external contributors (data scientists, other labs): required fields, how to request `catalog:write` access, naming conventions for auto-registered tables.
+12. **Lance support.** Add Lance dataset registration and UC adapter for ANN-indexed feature sets. Follows the same registration flow as Iceberg but returns a `lance.LanceDataset` from `open()`.
