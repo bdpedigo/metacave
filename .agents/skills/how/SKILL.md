@@ -1,6 +1,7 @@
 ---
 name: how
-description: "Investigate how a specific operation or feature works in the CAVE stack and record the findings. Use when: asked 'how does X work?', 'how is X implemented?', 'how does service Y handle Z?', 'how does the stack perform X?', 'what is X?', 'what does X use?', 'what stores/handles/serves X?', 'what is the backend/database/storage for X?', 'what library does X depend on?'. Researches relevant code, synthesizes a high-level answer, writes to q-and-a.md and submaps/, and flags missing documentation."
+description: "Investigate how a specific operation or feature works in the CAVE stack and record the findings. Use when: asked 'how does X work?', 'how is X implemented?', 'how does service Y handle Z?', 'how does the stack perform X?', 'what is X?', 'what does X use?', 'what stores/handles/serves X?', 'what is the backend/database/storage for X?', 'what library does X depend on?'. Researches relevant code, synthesizes a high-level answer, writes to q-and-a.md and submaps/, and flags missing documentation. Do not use for implementation
+questions, e.g. 'how do I add a new API endpoint to service Y?' or 'how do I set up service Z in production?' — those are architecture and implementation questions, not "how does it work?" questions."
 argument-hint: "The 'how' question to investigate (e.g. 'how does MaterializationEngine update root IDs?')"
 ---
 

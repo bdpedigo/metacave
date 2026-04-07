@@ -169,6 +169,9 @@ General-purpose Python library for neuron morphology analysis and visualization:
 ### neuroglancer
 WebGL browser-based viewer for volumetric data (imagery, segmentation, meshes, skeletons, annotations); the primary visualization front-end for CAVE data. Not a CAVE-owned or CAVE-specific service — the upstream is maintained by Google; the Seung Lab maintains a fork that adds `graphene://` ([PyChunkedGraph](#pychunkedgraph-pcg)) protocol support for interactive proofreading.
 
+### tensorstore
+C++ and Python library (developed by Google) for high-performance, asynchronous reading and writing of large multi-dimensional arrays across multiple formats (zarr, N5, Neuroglancer precomputed, OCDBT) and storage backends (GCS, S3, local and network filesystems, in-memory). Does not provide any CAVE-specific APIs or awareness of annotation or segmentation semantics — it is a general-purpose array I/O and key-value store interface. Used by [neuroglancer](#neuroglancer) as a core dependency for KvStore-based access to precomputed data (skeletons, annotations, volumes) and OCDBT databases.
+
 ### zmesh
 Python library implementing multi-label marching cubes mesh extraction and mesh simplification on dense volumetric labeled arrays, wrapping a high-performance C++ backend. Does not store, retrieve, or serve data — it is a pure-computation library with no network I/O. Used by the Meshing component of [PyChunkedGraph](#pychunkedgraph-pcg) to generate neuron mesh fragments; output can be serialized to Neuroglancer Precomputed format, making it compatible with [cloud-volume](#cloud-volume).
 

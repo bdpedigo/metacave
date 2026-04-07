@@ -44,9 +44,9 @@ These principles are extracted from the analysis below and should guide implemen
 A new Flask service backed by Postgres, following the standard CAVE service pattern (`middle_auth_client` for auth, CAVEclient sub-client wrapper). Deployed as its own Helm chart, Docker image, and Postgres database, with corresponding `terraform-google-cave` additions.
 
 **Why a new service instead of extending AnnotationFrameworkInfoService:**
-- AFIS is a config registry (datastacks, aligned volumes, permission groups). Catalog records are versioned data assets with column-level metadata, lineage DAGs, and per-resource ACLs — a fundamentally different data model.
-- Feature sets come from many sources (different labs, pipelines). A dedicated service gives external contributors a well-scoped registration API without complicating AFIS.
-- Per-catalog-record ACLs (backed by middle_auth groups) require finer granularity than AFIS's datastack-level permission model.
+- AnnotationFrameworkInfoService is a config registry (datastacks, aligned volumes, permission groups). Catalog records are versioned data assets with column-level metadata, lineage DAGs, and per-resource ACLs — a fundamentally different data model.
+- Feature sets come from many sources (different labs, pipelines). A dedicated service gives external contributors a well-scoped registration API without complicating AnnotationFrameworkInfoService.
+- Per-catalog-record ACLs (backed by middle_auth groups) require finer granularity than AnnotationFrameworkInfoService's datastack-level permission model.
 
 ### 3.2 Data model
 
@@ -184,30 +184,91 @@ The following tools were evaluated for the catalog backend:
 
 | Tool | Strengths | Weaknesses for CAVE | Verdict |
 |------|-----------|---------------------|---------|
-| **Unity Catalog OSS** | REST API, schema tracking, Iceberg/Delta/UniForm support, credential vending (v0.2+), native SQL views (v0.5+), modular auth (v0.5+), DuckDB + Trino integration, lightweight, Helm chart | No CAVE semantic roles; no middle_auth integration (requires wrapping); lineage is `❓` on roadmap | Strongest off-the-shelf option for tabular-only MVP; see view support analysis below |
+| **Apache Gravitino** | Apache TLP (graduated June 2025, v1.2.0). **Native Iceberg REST catalog** (GCS + credential vending). **Native Lance REST catalog** (first-class format). View support (Iceberg views, v1.2.0). Built-in access control (roles, privileges, OAuth2). Lineage subsystem. Python client. Multi-format (Iceberg, Hudi, Paimon, Lance, JDBC). Docker images. | Java server, heavier than UC. No CAVE semantic roles (requires wrapping). No middle_auth integration. Younger OSS governance (graduated June 2025). | **Strongest option overall.** Native Lance support, working views, and GCS credential vending address three UC gaps. See head-to-head comparison below. |
+| **Unity Catalog OSS** | REST API, schema tracking, Iceberg/Delta/UniForm support, credential vending (v0.2+), modular auth planned, DuckDB + Trino integration, lightweight, Helm chart | Views are **not implemented** in OSS (§5 correction). No Lance support. No CAVE semantic roles; no middle_auth integration (requires wrapping); lineage is `❓` on roadmap | Strong for Iceberg-only scope, but Lance and view gaps are significant. |
 | **Project Nessie** | Git-like table versioning, Iceberg-native | Iceberg/Delta only; no general metadata model | Good Iceberg catalog backend candidate; poor metadata registry |
 | **OpenMetadata** | Custom entity types, connector framework, lineage | Heavy (requires Elasticsearch); enterprise-oriented | Over-engineered for CAVE's scale |
 | **DataHub** | Flexible metadata model | Very heavy (Kafka + Elasticsearch) | Far more than needed |
 | **Marquez** | Lightweight lineage tracking | Lineage only; no discoverability or schema features | Too narrow |
 
-### View support as a build-vs-buy factor
+### Apache Gravitino vs. Unity Catalog — head-to-head
 
-As of v0.5, Unity Catalog OSS ships native view support: basic Spark SQL views, multi-dialect views, Iceberg view support, and materialized views are all marked `done` on the roadmap. This is directly relevant because views are currently listed as a future extension for a custom-built catalog (§8.2), meaning building from scratch defers view support to v2, while Unity Catalog provides it out of the box.
+Apache Gravitino (v1.2.0, Apache TLP since June 2025) is a federated metadata catalog that natively supports Iceberg, Lance, Hudi, Paimon, and JDBC databases. The comparison below evaluates it against Unity Catalog OSS (v0.4.0) on every dimension that matters for CAVE.
 
-**Unity Catalog also provides:**
-- **Credential vending** (temporary credentials for tables and volumes, since v0.2) — this is exactly the §3.3 "proxy the credential, not the data" pattern.
-- **Iceberg REST catalog compatibility** — resolves the Iceberg catalog backend question (§10, item 1) in favor of a well-supported open standard rather than a file I/O catalog.
-- **DuckDB + Trino integrations** — the client-side query path (§4, `open()`) works without custom adapter code.
+#### Feature comparison
 
-**What Unity Catalog still doesn't provide:**
-- CAVE semantic role annotations (join keys, EMAnnotationSchemas interop) — must be layered on regardless.
-- middle_auth integration — v0.5 adds modular auth (OAuth/OIDC), which could be wired to middle_auth, but this is non-trivial custom work.
-- Lineage (`❓` on roadmap, not committed).
-- Lance support (Unity Catalog is tabular-first; Lance would remain outside it).
+| Dimension | Unity Catalog OSS | Apache Gravitino | Winner for CAVE |
+|-----------|-------------------|------------------|-----------------|
+| **Iceberg REST catalog** | Yes (resolves tables to metadata.json) | Yes — full Iceberg REST API spec (Iceberg 1.10.0), JDBC/Hive/REST backends, multi-catalog support, scan plan cache, table metadata cache | Gravitino (more mature) |
+| **Lance support** | None | **Native Lance REST catalog** (port 9101) implementing the Lance REST API spec. Register, create, describe, drop tables. Also a **generic lakehouse catalog** (`lakehouse-generic` provider) with first-class Lance table format. | **Gravitino (decisive)** |
+| **GCS credential vending** | Yes (since v0.2) | Yes — `GCSTokenCredential` using GCS [Credential Access Boundaries](https://cloud.google.com/iam/docs/downscoping-short-lived-credentials) for scoped temporary tokens. Supports per-table path-scoped credentials. | Tie |
+| **View support** | **Not implemented** in OSS (§5 earlier correction: `TableType.MATERIALIZED_VIEW` is marked "not yet fully implemented," no `/views` endpoints, no `ViewService.java`) | **Implemented** in v1.2.0 — Iceberg REST service supports view operations with JDBC backend (schema version V1). Auto-migrates DB schema on first restart. | **Gravitino** |
+| **Access control** | Modular auth planned (v0.5 roadmap); limited in v0.4.0 | Built-in roles, privileges, OAuth2. Supports `USE_CATALOG`, `USE_SCHEMA`, `SELECT_TABLE`, etc. Roles can be scoped to catalog, schema, or table. Requires auxiliary mode for full ACL. | Gravitino |
+| **Lineage** | `❓` on roadmap | Lineage subsystem present in codebase (`lineage/` directory). On roadmap as implemented. | Gravitino (if functional) |
+| **Auth protocols** | OAuth/OIDC in v0.5 roadmap | OAuth2 (since 1.0), Basic auth, HTTPS. Access control for Iceberg REST requires auxiliary mode in Gravitino server. | Gravitino |
+| **Python client** | Python SDK | Python Client (` gravitino` package) | Tie |
+| **DuckDB integration** | Native (DuckDB reads UC-managed tables) | Via Iceberg REST catalog (DuckDB connects to Gravitino as a standard Iceberg REST endpoint: `http://host:9001/iceberg/`) | Tie (both work) |
+| **Spark/Flink/Trino** | Trino connector, Spark connector | Spark, Flink, Trino connectors. Also: Doris, StarRocks, Ray, PyIceberg. | Gravitino (broader) |
+| **Deployment weight** | Lightweight Java service, Helm chart | Heavier — Gravitino server (metadata) + Iceberg REST service (aux or standalone) + Lance REST service (aux or standalone). Docker images available. | UC (simpler) |
+| **Docker support** | Community images | `apache/gravitino-iceberg-rest:latest`, `apache/gravitino-lance-rest:latest` | Tie |
+| **Multi-format metadata** | Iceberg, Delta, UniForm | Iceberg, Delta, Hudi, Paimon, Hive, Lance, JDBC (MySQL/PostgreSQL/Doris/StarRocks/ClickHouse/OceanBase) | Gravitino |
+| **Maturity / governance** | Databricks-backed, Linux Foundation | Apache TLP (graduated June 2025), 2.9k stars, 295 contributors, v1.2.0 stable | Both solid; UC has corporate backing, Gravitino has Apache governance |
 
-**Updated assessment:** the view support and credential vending significantly close the gap between Unity Catalog and a custom build for the tabular-only v1 scope. The remaining delta is (a) the middle_auth wrapper, (b) CAVE semantic role metadata (custom API layer on top of UC), and (c) lineage. The key question is whether those three pieces are better implemented as a thin CAVE wrapper around Unity Catalog, or as a standalone service that reimplements what Unity Catalog provides. **This decision should be made explicitly before implementation begins**, ideally with a time-boxed prototype of a UC-backed CAVE catalog to assess the wrapper complexity. The original "build custom" verdict remains defensible but is no longer obvious given UC's v0.5 capabilities.
+#### What Gravitino provides that UC doesn't
 
-> **[NOTE — Nessie as Iceberg catalog backend]** If building custom, Nessie is worth evaluating as the *Iceberg catalog backend* (the thing that resolves table names to metadata.json locations on GCS) — a different role from the CAVE registry layer. Unity Catalog, if chosen, subsumes this role via its Iceberg REST catalog compatibility.
+1. **Native Lance REST catalog.** This is the standout differentiator. Gravitino provides a complete Lance REST service (`/lance/v1/...`) with namespace management, table CRUD, register/deregister. Lance tables stored on GCS work natively. The current CAVE prototype (Phase 5, item 12) planned to handle Lance as a custom adapter outside UC — Gravitino eliminates that entirely.
+
+2. **Working Iceberg view support.** The Gravitino Iceberg REST service implements view operations when using the JDBC catalog backend with `jdbc-schema-version=V1`. This resolves §8.2 (logical views) without custom code.
+
+3. **Lineage.** Present in the codebase; UC has no lineage story.
+
+#### What Gravitino doesn't change
+
+- **CAVE semantic roles, lineage fields, datastack membership** still require a CAVE wrapper service. Gravitino is a metadata catalog, not a domain-specific registry.
+- **middle_auth integration** must still be built as a wrapper layer. Gravitino's OAuth2/Basic auth can be proxied through a CAVE Flask service the same way UC's auth would be.
+- **Registration validation** (verify mat version exists in ME, validate annotation table references) is CAVE-specific logic independent of the backend.
+
+#### Architecture with Gravitino
+
+```
+┌─────────────────┐   ┌──────────────────────┐
+│   CAVEclient    │──▶│  CAVE Catalog Service │  (Flask, middle_auth)
+│ client.catalog  │   │  CAVE-specific logic: │
+└─────────────────┘   │  semantic roles,      │
+                      │  lineage, validation  │
+                      └──────┬───────────────┘
+                             │ proxies to
+               ┌─────────────┴──────────────┐
+               ▼                            ▼
+    ┌──────────────────┐       ┌──────────────────┐
+    │  Gravitino       │       │  Gravitino       │
+    │  Iceberg REST    │       │  Lance REST      │
+    │  (port 9001)     │       │  (port 9101)     │
+    └────────┬─────────┘       └────────┬─────────┘
+             │                          │
+             ▼                          ▼
+    ┌──────────────────────────────────────────┐
+    │  Gravitino Server (port 8090)            │
+    │  Metadata backend, access control,       │
+    │  credential vending (GCSTokenCredential) │
+    └────────┬─────────────────────────────────┘
+             │
+             ▼
+    ┌──────────────────┐
+    │  GCS Catalog     │
+    │  Bucket          │
+    │  (Iceberg +      │
+    │   Lance tables)  │
+    └──────────────────┘
+```
+
+#### Recommended decision
+
+**Switch from Unity Catalog to Apache Gravitino.** The native Lance REST catalog, working view support, and built-in access control address three of the four gaps identified in UC. The CAVE wrapper complexity is equivalent for either backend (both need middle_auth integration and semantic role metadata). Gravitino adds deployment weight (three services instead of one) but eliminates custom Lance adapter code and the view support gap, for a net reduction in total custom code.
+
+> **[ACTION]** Time-box a Gravitino prototype (same scope as the existing UC prototype): deploy Gravitino via Docker, create an Iceberg catalog on GCS, register a test table, confirm DuckDB can read it via the Iceberg REST endpoint with GCS credential vending. Additionally, test the Lance REST service with a test Lance dataset. If both work, proceed with Gravitino as the backend.
+
+> **[NOTE — Nessie as Iceberg catalog backend]** With Gravitino chosen, Nessie is no longer relevant — Gravitino's Iceberg REST service subsumes the Iceberg catalog backend role.
 
 ---
 
@@ -245,13 +306,22 @@ The catalog could generalize to non-tabular assets by introducing **adapters** �
 | Neuroglancer precomputed | `info` file |
 | Neuroglancer mesh | `info` + shard index |
 
+**Will the Unity Catalog choice constrain this extension?**
+
+Short answer: **no**. The two components of the non-tabular extension are (a) the registry record and (b) the adapter code, and UC constrains neither:
+
+- **Registry record:** UC has "External volumes" (available since v0.1) — named GCS/S3 URI references with arbitrary key-value properties and credential vending. A Neuroglancer precomputed layer would be registered as a UC external volume with a CAVE property `object_type: neuroglancer_precomputed`. UC doesn't need to understand the format; the URI + CAVE properties are sufficient. Credential vending for volumes works the same way as for tables, so the access control pattern translates directly.
+- **Adapter code:** adapters that parse Neuroglancer `info` files or shard indexes are CAVE-side code (in the catalog wrapper service and/or CAVEclient). They are independent of whether the metadata backend is UC or a custom Flask/Postgres service. Choosing UC neither helps nor hinders adapter implementation.
+- **UC object hierarchy:** UC organizes objects as catalog → schema → (tables | volumes | functions | models). Non-tabular assets sit in the "volumes" bucket alongside tabular assets in the same UC catalog. This is actually marginally cleaner than a custom service where you'd need to add a new object type to the DB schema.
+
+The one concern that is **not** resolved by the backend choice is the **AnnotationFrameworkInfoService boundary**: AnnotationFrameworkInfoService already registers some of the same sources (image layers, segmentation sources) that a non-tabular extension would catalog. That overlap is a governance question that must be resolved through a boundary agreement with AnnotationFrameworkInfoService independently of what backend the catalog uses.
+
 **Why defer this:**
 - The tabular problem is concrete and urgent. Non-tabular assets are a "would be nice."
-- Non-tabular assets overlap with AnnotationFrameworkInfoService's existing registration of image and segmentation sources. The document claims "they answer different questions," but in practice two services registering the same segmentation source will confuse operators and clients. The boundary needs careful design.
+- The AnnotationFrameworkInfoService boundary needs explicit agreement before any non-tabular registration is built, regardless of backend.
 - Each adapter is a maintenance surface (format versioning, error handling for missing/moved objects, read access requirements).
-- Scope expansion from "tabular data catalog" to "universal asset registry" dramatically increases the design, implementation, and testing surface.
 
-**Recommendation:** build v1 as tabular-only. If the adapter pattern proves valuable, extend in v2 with a clear boundary agreement with AFIS.
+**Recommendation:** build v1 as tabular-only. The UC choice does not paint us into a corner — non-tabular assets can be added in v2 as UC external volumes with CAVE adapter code, with no changes to the backend or the tabular registration path.
 
 ### 8.2 Logical views
 
@@ -298,7 +368,7 @@ For a custom-built catalog, start with Option A; add Option B when needed. The u
 
 ### Deferred (v2 and beyond)
 
-8. **Non-tabular asset scope:** when and how to extend to meshes, precomputed volumes, etc., and what boundary with AFIS. (See §8.1.)
+8. **Non-tabular asset scope:** when and how to extend to meshes, precomputed volumes, etc., and what boundary with AnnotationFrameworkInfoService. (See §8.1.)
 9. **Logical views:** for a custom-built catalog, when does `enrich()` become insufficient? For a UC-backed catalog, views are available from day one. (See §5 and §8.2.)
 10. **`delegated` access type:** credential brokering for external-but-not-public resources. (See §3.3.)
 11. **Server-side query execution:** Trino / DuckDB server as a future upgrade from client-side execution.
@@ -316,7 +386,7 @@ For a custom-built catalog, start with Option A; add Option B when needed. The u
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| **Scope creep into universal asset registry** | High | Delays v1 delivery, complicates AFIS boundary | Hard scope boundary: v1 = tabular only. Non-tabular is a separate design phase. |
+| **Scope creep into universal asset registry** | High | Delays v1 delivery, complicates AnnotationFrameworkInfoService boundary | Hard scope boundary: v1 = tabular only. Non-tabular is a separate design phase. |
 | **Schema overload deters registration** | Medium | Low adoption; catalog becomes empty | Minimal required fields for v1. Optional fields can be backfilled. |
 | **Two sources of truth (catalog vs. format)** | Medium | Stale metadata, user confusion | Format-authoritative principle (§2). Catalog caches schema snapshots for display only. |
 | **Unity Catalog wrapper complexity underestimated** | Medium | Delayed v1 delivery | Time-box prototype of UC wrapper before committing; see §5. |
