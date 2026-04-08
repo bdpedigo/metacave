@@ -16,7 +16,11 @@ The spatial index is a coarse-to-fine octree. The `info` JSON defines multiple l
 
 ### Writing Precomputed Annotations Today
 
-cloud-volume's `PrecomputedAnnotationSource` is the standard Python implementation for writing precomputed annotation trees. It takes a full set of annotations, runs the capacity-based level-assignment algorithm, and writes the entire tree to GCS/S3/local filesystem. This is an all-or-nothing operation: to add new annotations, you must rewrite the entire tree.
+cloud-volume's `PrecomputedAnnotationSource` is the standard Python implementation for **reading** precomputed annotation trees. It supports `get_by_bbox`, `get_by_id`, `get_all`, and `get_by_relationship` queries. However, **cloud-volume has no annotation writer**. The write side was planned (constructor accepts a `readonly` parameter, and a `tobytes()` stub exists) but never implemented. There is no method to serialize annotations to binary, build spatial indices, or upload precomputed annotation trees.
+
+In practice, precomputed annotation files are produced by custom scripts in the MaterializationEngine pipeline, not by a reusable cloud-volume API. Writing a precomputed annotation tree requires implementing: binary encoding of annotation records, the capacity-based level-assignment algorithm, spatial chunk file layout, and the by-ID index.
+
+This means any proposal involving precomputed annotation writes — including this one — requires building a writer as a prerequisite.
 
 ## The Problem
 
@@ -104,11 +108,13 @@ Each sub-tree under `trees/` is a standard, complete precomputed annotation tree
 A writer wants to add N new annotations:
 
 1. Assign unique annotation IDs.
-2. Build a standard precomputed annotation tree using cloud-volume over just the new annotations.
+2. Build a precomputed annotation tree over just the new annotations, using a precomputed annotation writer (see below).
 3. Write it to `trees/{next_seq}/` on GCS.
 4. Atomically update `manifest.json` to append the new sub-tree.
 
-**No new serialization code, no new storage format, no new dependencies.** Multiple writers append concurrently — each writes to a different sub-tree path. The only coordination is the manifest update (a single small JSON object; GCS supports atomic object writes).
+Multiple writers append concurrently — each writes to a different sub-tree path. The only coordination is the manifest update (a single small JSON object; GCS supports atomic object writes).
+
+**Writer prerequisite:** cloud-volume currently has no annotation writer (see [Writing Precomputed Annotations Today](#writing-precomputed-annotations-today)). A precomputed annotation writer must be built first. This writer needs to: encode annotation records to the precomputed binary format, run the capacity-based level-assignment algorithm, write spatial chunk files, and write the by-ID index. The writer is the same regardless of whether annotations are served from a single tree or from merged sub-trees — this proposal does not change the per-tree write logic, only how trees are composed. The writer could live in cloud-volume (completing the planned but unimplemented write path) or as a standalone library.
 
 ### Memory-Bounded Initial Load
 
@@ -116,7 +122,7 @@ For a large initial dataset that doesn't fit in memory, **spatially partition** 
 
 1. Divide the volume into coarse spatial regions (e.g. level-2 or level-3 grid cells).
 2. Stream annotations, routing each to the appropriate region.
-3. For each region, build and upload a sub-tree containing only annotations in that region.
+3. For each region, build and upload a sub-tree containing only annotations in that region (using the precomputed annotation writer).
 4. Write a manifest listing all region sub-trees.
 
 Each sub-tree is a fraction of the full dataset. Regions are independent and can be written **in parallel** across workers. Memory per worker is bounded by the size of one region.
@@ -397,10 +403,10 @@ An [alternative proposal](delta-precomputed-annotations.md) considers serving Ne
 
 The sub-tree merging approach solves the specific goal — appendable, concurrent, memory-bounded precomputed annotations — with:
 
-- ~200 lines of adapter code (FastAPI + asyncio + cloud-volume)
+- ~200 lines of adapter code (FastAPI + asyncio + cloud-volume for reads)
+- A precomputed annotation writer (new, required — cloud-volume's read-side code and format knowledge can inform the implementation)
 - Zero new storage format dependencies
-- The entire existing cloud-volume ecosystem reused as-is
-- Compaction that is literally the current materialization write step
+- Compaction reuses the same writer used for sub-tree construction
 
 If a unified analytical + serving layer is desired long-term, the Delta Lake approach (or alternatives like Lance or DuckDB + GeoParquet) may warrant further investigation. But for the immediate goal of incremental, concurrent-writer-safe, memory-bounded annotation publishing to Neuroglancer, this is a smaller and lower-risk path.
 
