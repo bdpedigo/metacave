@@ -89,3 +89,12 @@
 [submodule "submodules/cave-github"]
 	path = submodules/cave-github
 	url = https://github.com/CAVEconnectome/.github
+[submodule "submodules/registry"]
+	path = submodules/registry
+	url = https://github.com/CAVEconnectome/registry.git
+[submodule "submodules/tensorstore"]
+	path = submodules/tensorstore
+	url = https://github.com/google/tensorstore.git
+[submodule "submodules/precomputed_python"]
+	path = submodules/precomputed_python
+	url = https://github.com/fcollman/precomputed_python.git

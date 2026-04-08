@@ -169,6 +169,10 @@ General-purpose Python library for neuron morphology analysis and visualization:
 ### neuroglancer
 WebGL browser-based viewer for volumetric data (imagery, segmentation, meshes, skeletons, annotations); the primary visualization front-end for CAVE data. Not a CAVE-owned or CAVE-specific service — the upstream is maintained by Google; the Seung Lab maintains a fork that adds `graphene://` ([PyChunkedGraph](#pychunkedgraph-pcg)) protocol support for interactive proofreading.
 
+### precomputed_python
+
+Work-in-progress Python library for reading and writing spatial annotations in Neuroglancer's precomputed annotation format, providing `AnnotationReader` and `AnnotationWriter` classes with lookup by ID, relationship (e.g. pre/post segment), and bounding box. Not a finished user-facing package — it is a demo/prototype with explicit limitations: all annotations are held in memory, only a single fixed-grid spatial index is generated, and the design is not suitable for datasets beyond a few million annotations. Uses [tensorstore](#tensorstore) for cloud storage I/O and the `neuroglancer` Python library for coordinate space definitions and annotation property schema types. _README is nearly empty; purpose and limitations inferred from source code docstrings._
+
 ### tensorstore
 C++ and Python library (developed by Google) for high-performance, asynchronous reading and writing of large multi-dimensional arrays across multiple formats (zarr, N5, Neuroglancer precomputed, OCDBT) and storage backends (GCS, S3, local and network filesystems, in-memory). Does not provide any CAVE-specific APIs or awareness of annotation or segmentation semantics — it is a general-purpose array I/O and key-value store interface. Used by [neuroglancer](#neuroglancer) as a core dependency for KvStore-based access to precomputed data (skeletons, annotations, volumes) and OCDBT databases.
 
