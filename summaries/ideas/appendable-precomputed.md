@@ -285,6 +285,46 @@ Sort all annotations by their 3D Morton code (Z-order curve over x, y, z) using 
 
 **Memory:** Writers and compactors can operate with bounded memory using spatial partitioning or streaming strategies. No requirement to hold the full dataset in RAM.
 
+### Read Fan-Out: Request Count Scaling
+
+The primary cost of this design is that **every Neuroglancer request is amplified by the number of sub-trees**. This warrants detailed analysis because Neuroglancer's access pattern is bursty and concurrent.
+
+**Per-chunk request cost:** A single spatial chunk request becomes N parallel GCS GETs, where N = number of sub-trees. Most of these will return 404 (empty chunk in that sub-tree), which is fast (~10–30ms on GCS), but each still incurs a network round-trip.
+
+**Neuroglancer's access pattern amplifies this further.** On initial layer load, Neuroglancer requests chunks from all levels simultaneously. For a 10-level hierarchy:
+
+| Level | Grid cells | Requests per level |
+|-------|------------|-------------------|
+| 0 | 1 | 1 |
+| 1 | 8 | 8 |
+| 2 | 64 | 64 |
+| 3 | 512 | ~50–100 (viewport-dependent) |
+| ... | ... | ... |
+
+A typical initial viewport might generate ~100–200 chunk requests across all levels. With N sub-trees, that becomes **100–200 × N GCS GETs**. At 20 sub-trees: 2,000–4,000 GCS requests on initial load.
+
+**Panning and zooming** generates additional chunk requests for newly visible cells, each amplified by N.
+
+**Concrete latency estimates** (assuming GCS, p50 latency per GET):
+
+| Sub-trees (N) | Requests per chunk | p50 latency (parallel) | p99 tail (parallel) |
+|---------------|-------------------|----------------------|-------------------|
+| 1 | 1 | ~30ms | ~80ms |
+| 5 | 5 | ~40ms | ~120ms |
+| 20 | 20 | ~60ms | ~200ms |
+| 50 | 50 | ~100ms | ~400ms |
+
+Parallel fan-out means latency grows sub-linearly (dominated by the slowest response), but tail latency grows faster — with N requests, the probability of at least one slow response increases.
+
+**Mitigations:**
+
+1. **Cache 404s.** Most sub-trees are spatially sparse — a given chunk exists in only a few sub-trees. After the first request, cache which sub-trees have data for which coarse cells. This eliminates most fan-out for warm paths.
+2. **Sub-tree spatial metadata.** Store each sub-tree's bounding box in the manifest. Skip sub-trees whose bounds don't overlap the requested chunk. For spatially-partitioned sub-trees, this reduces fan-out to ~1–2 per request.
+3. **Coarse-level caching.** Levels 0–3 have few cells and are requested on every viewport change. Cache their merged results in the adapter. This eliminates fan-out for the most frequently requested chunks.
+4. **Compaction as the primary control.** Keep sub-tree count bounded. The fan-out problem is self-correcting if compaction runs at a reasonable cadence relative to the append rate.
+
+**GCS request cost:** At $0.004 per 10K Class B operations (GETs), 4,000 GETs per initial load is $0.0016. Not negligible at scale if many users are loading the layer simultaneously, but manageable. The latency cost is more concerning than the monetary cost.
+
 ## What This Replaces
 
 ```
