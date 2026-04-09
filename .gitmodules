@@ -98,3 +98,6 @@
 [submodule "submodules/precomputed_python"]
 	path = submodules/precomputed_python
 	url = https://github.com/fcollman/precomputed_python.git
+[submodule "submodules/storekit"]
+	path = submodules/storekit
+	url = https://github.com/bdpedigo/storekit.git
