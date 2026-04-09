@@ -1,17 +1,16 @@
 ---
-name: how
-description: "Investigate how a specific operation or feature works in the CAVE stack and record the findings. Use when: asked 'how does X work?', 'how is X implemented?', 'how does service Y handle Z?', 'how does the stack perform X?', 'what is X?', 'what does X use?', 'what stores/handles/serves X?', 'what is the backend/database/storage for X?', 'what library does X depend on?'. Researches relevant code, synthesizes a high-level answer, writes to q-and-a.md and submaps/, and flags missing documentation. Do not use for implementation
-questions, e.g. 'how do I add a new API endpoint to service Y?' or 'how do I set up service Z in production?' — those are architecture and implementation questions, not "how does it work?" questions."
-argument-hint: "The 'how' question to investigate (e.g. 'how does MaterializationEngine update root IDs?')"
+name: explain
+description: "Investigate how a specific operation or feature works in the CAVE stack and record the findings. Use when someone is asking about how the current CAVE and related tool stack works. Researches relevant code, synthesizes a high-level answer, writes to q-and-a.md and submaps/, and flags missing documentation. Do not use for implementation questions, e.g. 'how do I add a new API endpoint to service Y?' or 'how do I set up service Z in production?' — those are architecture and implementation questions, not "how does it work?" questions." Do not use if it looks like the user is trying to actively fix something
+argument-hint: "The 'explain' question to investigate (e.g. 'how does MaterializationEngine update root IDs?') but not 'how do I fix X bug?' or 'how do I implement Y feature?'"
 ---
 
-# How — CAVE Stack Investigation
+# Explain — CAVE Stack Investigation
 
 > **LOADING REQUIREMENT:** Read this file in a **standalone tool call** before taking any other action — do not parallelize the skill load with repo exploration or directory listing. The procedure below must be read in full before any research begins.
 
 ## Purpose
 
-Answer a "how does X work?" question by triaging `summaries/map.md`, reading targeted source code, and recording the findings in `summaries/q-and-a.md` (and `summaries/submaps/` for mechanical detail). Each invocation incrementally builds up the team's shared understanding of the codebase.
+Answer an "explain X" question by triaging `summaries/map.md`, reading targeted source code, and recording the findings in `summaries/q-and-a.md` (and `summaries/submaps/` for mechanical detail). Each invocation incrementally builds up the team's shared understanding of the codebase.
 
 ## Output Files
 
