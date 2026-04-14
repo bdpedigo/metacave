@@ -85,13 +85,21 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 
 **Decision**: Phase 0 uses datastack-level permissions inherited from middle_auth. A nullable `access_group` column enables per-asset permissions later: when NULL, fall back to datastack permissions; when set, check membership in that middle_auth group.
 
-### 6. Synchronous validation at registration
+### 6. Materialization table name reservation
+
+**Decision**: Asset names that match a current materialization table name (for the same datastack) are reserved. Registration of a reserved name requires an elevated permission — specifically, setting `properties.source` to `"materialization"` requires admin/service-level write permission. Regular users who attempt to register an asset whose name matches a mat table are rejected with a descriptive error. The check queries the MaterializationEngine `/tables` endpoint (union across all versions for the datastack) at registration time. Layout variants of reserved names (e.g., `synapses.by_pre_root` when `synapses` is a mat table) are also reserved.
+
+**Rationale**: Prevents namespace confusion where a user's external feature table shadows an official materialization dump. Using `properties.source` as the gate (rather than a separate endpoint or service account check) keeps the API surface simple and the authorization logic in one place.
+
+**Concern — reverse collision**: The catalog cannot prevent someone from creating a new annotation table in AnnotationEngine that happens to share a name with an existing catalog asset or view. If that table is later materialized, the mat dump service would register it and collide with the existing catalog entry. Mitigation options include: (a) a cross-check during annotation table creation (coupling AnnotationEngine to the catalog), (b) accepting the collision and letting the mat dump service overwrite/coexist, or (c) a naming convention that partitions the namespace (e.g., external assets must use a prefix like `ext.`). No mitigation chosen yet — flagged for group discussion.
+
+### 7. Synchronous validation at registration
 
 **Decision**: Registration uses synchronous validation (dedup check, auth check, URI reachability via HEAD request, format sniff by reading format-specific metadata like `_delta_log/`). Source-conditional validation: mat dumps also verify the claimed mat table/version exists via MaterializationEngine API. Total expected time: under 10 seconds.
 
 **Rationale**: Registration is low-frequency (a few times a day). Synchronous validation is simpler than async and provides immediate feedback. Async batch registration can be added later if volume increases.
 
-### 7. Views as SQL templates resolved client-side, with `latest` references
+### 8. Views as SQL templates resolved client-side, with `latest` references
 
 **Decision**: A view is a stored SQL template with named placeholders referencing other assets via the natural key path syntax: `datastack/name/mat_version/revision`. The special keyword `latest` may be used in place of `mat_version` and/or `revision` to resolve to the highest available value at query time. For example, `minnie65_public/synapses/latest/latest` resolves to the latest revision of synapses at the latest mat version. The `/resolve` endpoint resolves `latest` references, vends credentials, substitutes placeholder names with credential-vended URIs, and returns the ready-to-execute SQL string along with the concrete resolved references (so the caller knows exactly which assets were used).
 
@@ -101,7 +109,7 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 - Iceberg view spec — not available for Delta Lake; Delta Sharing has no view concept.
 - Materialized views (pre-joined tables) — users can do this themselves by executing a query and uploading the result.
 
-### 8. Phased delivery
+### 9. Phased delivery
 
 - **Phase 0**: Asset registry + discovery + synchronous validation
 - **Phase 1**: Credential vending + middle_auth gating on access

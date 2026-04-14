@@ -47,6 +47,21 @@ The system SHALL accept asset registration via `POST /api/v1/assets/register` wi
 - **WHEN** a caller without write permission on the specified datastack attempts to register an asset
 - **THEN** the system SHALL return 403 Forbidden
 
+### Requirement: Materialization table name reservation
+The system SHALL check asset names at registration time against the set of materialization table names for the same datastack (queried from the MaterializationEngine `/tables` endpoint across all versions). If the name matches a materialization table, the system SHALL reject the registration unless the caller has admin/service-level write permission and sets `properties.source` to `"materialization"`. Layout variants (names matching `{mat_table}.{suffix}`) SHALL also be reserved. The dry-run validation endpoint SHALL also perform this check.
+
+#### Scenario: Regular user blocked from registering a mat table name
+- **WHEN** a regular user attempts to register an asset named `synapses` in a datastack where `synapses` exists as a materialization table
+- **THEN** the system SHALL return 409 with a message indicating the name is reserved for materialization
+
+#### Scenario: Mat service registers a mat table name
+- **WHEN** a caller with admin/service write permission registers an asset named `synapses` with `properties.source: "materialization"`
+- **THEN** the system SHALL accept the registration
+
+#### Scenario: Layout variant of a reserved name is also reserved
+- **WHEN** a regular user attempts to register an asset named `synapses.by_pre_root` and `synapses` exists as a materialization table
+- **THEN** the system SHALL return 409 with a message indicating the name is reserved (layout variants of mat table names are reserved)
+
 ### Requirement: Dry-run validation endpoint
 The system SHALL provide `POST /api/v1/assets/validate` which accepts the same request body as `/api/v1/assets/register` and runs the identical validation pipeline (caller authorization, duplicate check, URI reachability, format sniff, source-conditional checks) but SHALL NOT create an asset record. The response SHALL return a structured validation report listing each check with its pass/fail status and any error details.
 
