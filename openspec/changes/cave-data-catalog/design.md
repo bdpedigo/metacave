@@ -18,7 +18,7 @@ The stack is Python-first (Flask/FastAPI), runs on GKE, uses PostgreSQL for stat
 - Query execution — the catalog never runs queries; DuckDB/Polars do that client-side
 - Schema authority — the data format (Delta log, info file, etc.) is authoritative for schema; the catalog only caches hints
 - Data writing — the catalog does not write to data buckets; producers write independently and then register
-- Replacing MaterializationEngine's query API — the catalog serves static dumps, not live queries
+- Replacing MaterializationEngine's query API — the catalog serves static dumps, not live queries. However, a future CAVEclient convenience layer that provides a materialization-compatible query interface on top of catalog-hosted table dumps (e.g., using Polars to mimic `client.materialize.query_table()`) should be straightforward to build. This is not part of the catalog service itself — it is a client-side concern that the catalog's design must not preclude.
 - Per-row or per-cell lineage tracking — the catalog describes asset-level and column-level relationships, not row-level references
 - Full Iceberg REST Catalog or Delta Sharing protocol compliance (can be added later as additive endpoints)
 
@@ -61,6 +61,8 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 - Single `version` field (conflates mat version with asset revision) — rejected because "version" already has a strong meaning in CAVE (materialization version), and a single field can't represent "revision 2 of synapse_embeddings at mat version 943."
 - `mat_version` as a non-nullable field with sentinel value (e.g., -1) — avoids the partial index complexity but introduces a magic number convention.
 - Separate tables for lineage, references, etc. — premature normalization; the metadata is small and JSONB is easily filtered with GIN indexes.
+
+**Physical layout variants**: The same logical dataset may exist in multiple physical layouts (partitioning, sort order, indexing) optimized for different query patterns — e.g., synapses partitioned by `pre_pt_root_id` vs `post_pt_root_id` vs spatial position. These are not revisions (none is "better"), not different data, and not well-captured by a single field (a layout may involve many storage decisions). Layout variants are encoded in `name` via convention (`synapses.by_pre_root`) with `properties.base_name` linking to the logical dataset name and `properties.layout` providing structured metadata (partition columns, sort order, description). This keeps the natural key simple while enabling programmatic discovery (`WHERE properties->>'base_name' = 'synapses'`). Views reference the appropriate layout for their query pattern. The exact naming convention for layout suffixes is listed under Naming Conventions below.
 
 ### 4. Cloud-agnostic credential vending with provider-specific backends
 
@@ -112,6 +114,16 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 
 ## Open Questions
 
-- **Service name**: "catalog", "registry"? Needs to be distinct from existing CAVE services.
 - **TTL lifecycle scope**: Should the catalog only stop advertising expired assets (soft delete), or also trigger deletion of underlying bucket data for managed assets? Leaning toward catalog-only with cloud-native lifecycle rules (GCS Object Lifecycle, S3 Lifecycle) handling storage.
 - **Deployment**: Own Cloud SQL instance or shared with another service? Own Helm chart is assumed.
+
+## Naming Conventions (to discuss as a group)
+
+- **Service name**: "catalog" vs "registry" — "catalog" implies browsing and discovery; "registry" implies registration and lookup. Both are accurate. Needs to be distinct from existing CAVE services (`storekit` is taken, `registry` collides with the existing container/Helm registry service).
+- **`mat_version` vs `materialization_version`**: The field name in the data model. `mat_version` is shorter and matches common CAVE shorthand. `materialization_version` is more explicit and self-documenting for newcomers. The existing MaterializationEngine API uses `version` in its paths.
+- **Layout variants**: Convention for naming physical layout variants of the same logical dataset. Current proposal: `name.layout_suffix` (e.g., `synapses.by_pre_root`, `synapses.spatial`) with `properties.base_name` linking back to the logical dataset name. Alternatives: separate `layout` field, hierarchical names (`synapses/by_pre_root`), or flat distinct names with a tag/property for grouping.
+
+## Future Considerations
+
+- **Materialization-compatible query interface**: A future CAVEclient convenience layer that mimics `client.materialize.query_table()` on top of catalog-hosted table dumps, using an opinionated engine (e.g., Polars) without locking users into that choice.
+- **Layout-aware query routing**: A future API helper ("give me the best layout of synapses for this query pattern") that recommends or auto-selects the optimal layout variant based on query predicates. Not planned for initial phases.

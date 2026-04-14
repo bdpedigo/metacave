@@ -52,3 +52,10 @@ The `CatalogClient` SHALL provide a `delete_asset(asset_id)` method that DELETEs
 #### Scenario: Delete an asset
 - **WHEN** a user calls `client.catalog.delete_asset("uuid-here")`
 - **THEN** the method SHALL DELETE the catalog entry and return None
+
+### Requirement: Future materialization-compatible query interface
+The `CatalogClient` design SHALL NOT preclude a future convenience layer that provides a query interface compatible with the existing `client.materialize.query_table()` API, backed by catalog-hosted table dumps rather than the MaterializationEngine. This future layer would use an opinionated query engine (e.g., Polars) for execution but would not lock users into that choice — users who prefer DuckDB or other tools can use the standard credential vending and view resolution APIs directly. This requirement is a design constraint for future compatibility, not a Phase 0-2 deliverable.
+
+#### Scenario: Future compatibility is preserved
+- **WHEN** a materialization table dump is registered in the catalog with `properties.source: "materialization"` and the appropriate `mat_version`
+- **THEN** sufficient metadata SHALL exist in the asset record for a future client-side wrapper to locate, authenticate, and query the table without additional catalog API changes
