@@ -122,6 +122,7 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 
 ## Open Questions
 
+- **Single database vs per-datastack databases**: MaterializationEngine and AnnotationEngine both use a separate PostgreSQL database per aligned volume (datastack), with `DatabaseConnectionManager.get_engine(database_name)` routing requests. Adopting the same pattern for the catalog would drop `datastack` from the natural key (simplifying to `(name, mat_version, revision)`) and provide operational consistency. However, the catalog's schema is trivially simple (one table) and doesn't benefit from isolation the way mat/anno's dynamic per-table schemas do. Per-datastack DBs also add connection pool management and complicate cross-datastack views. Current decision: single database with `datastack` as a column. Revisit if operational pain emerges or if the team prefers uniformity.
 - **TTL lifecycle scope**: Should the catalog only stop advertising expired assets (soft delete), or also trigger deletion of underlying bucket data for managed assets? Leaning toward catalog-only with cloud-native lifecycle rules (GCS Object Lifecycle, S3 Lifecycle) handling storage.
 - **Deployment**: Own Cloud SQL instance or shared with another service? Own Helm chart is assumed.
 
