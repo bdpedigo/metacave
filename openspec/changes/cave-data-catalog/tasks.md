@@ -8,6 +8,8 @@
 ## 2. Asset Registry API (Phase 0)
 
 - [ ] 2.1 Implement `POST /api/v1/assets/register` — request validation, dedup check, auth check
+- [ ] 2.1b Extract shared validation pipeline so it can be reused by both register and validate endpoints
+- [ ] 2.1c Implement `POST /api/v1/assets/validate` — same validation pipeline as register, returns structured pass/fail report without creating an asset
 - [ ] 2.2 Implement URI reachability validation (HEAD request via cloud-provider-appropriate SDK — GCS or S3 based on URI scheme)
 - [ ] 2.3 Implement format sniff validation (check for `_delta_log/`, `info` file, etc. based on declared format)
 - [ ] 2.4 Implement source-conditional validation: when `properties.source == "materialization"`, verify mat table and version exist via MaterializationEngine API
@@ -33,7 +35,7 @@
 
 ## 5. CAVEclient Integration
 
-- [ ] 5.1 Add `CatalogClient` class to CAVEclient with `list_assets()`, `get_asset()`, `register_asset()`, `delete_asset()` methods (using mat_version/revision parameters)
+- [ ] 5.1 Add `CatalogClient` class to CAVEclient with `list_assets()`, `get_asset()`, `register_asset()`, `validate_asset()`, `delete_asset()` methods (using mat_version/revision parameters)
 - [ ] 5.2 Add `get_access()` method for credential vending
 - [ ] 5.3 Add `resolve_view()` and `to_duckdb_sql()` methods for view resolution
 - [ ] 5.4 Wire `CatalogClient` to `CAVEclient.catalog` property, configured with datastack and auth token

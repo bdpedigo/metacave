@@ -9,18 +9,23 @@ The stack is Python-first (Flask/FastAPI), runs on GKE, uses PostgreSQL for stat
 **Goals:**
 - Provide a central registry for discovering what data assets exist for a given datastack and version
 - Vend short-lived, prefix-scoped cloud storage credentials for managed data assets, gated by middle_auth permissions (GCS initially, S3 in the future)
-- Integrate with the existing CAVE stack: middle_auth for auth, CAVEclient for programmatic access
-- Support any data format (Delta Lake, Lance, Parquet, Iceberg, Neuroglancer precomputed, etc.) without becoming authoritative over format-specific metadata (schema, partitioning, etc.)
-- Enable stored view definitions (SQL templates + asset references) that can be resolved client-side for cross-table joins in DuckDB/Polars
+- Integrate with the existing CAVE stack: middle_auth for auth, CAVEclient for programmatic access. Include enough metadata about materialization / chunkedgraph that linking is possible.
+- First-class support for some initial tabular data formats (Delta Lake, Lance, Parquet). See below about future support for other formats.
+- Where possible, avoid becoming authoritative over format-specific metadata (schema, partitioning, etc.) since this is often advertised by the format (e.g. _delta_log, Neuroglancer info)
 - Design incrementally: each phase is independently useful
 
 **Non-Goals:**
 - Query execution — the catalog never runs queries; DuckDB/Polars do that client-side
 - Schema authority — the data format (Delta log, info file, etc.) is authoritative for schema; the catalog only caches hints
 - Data writing — the catalog does not write to data buckets; producers write independently and then register
-- Replacing MaterializationEngine's query API — the catalog serves static dumps, not live queries. However, a future CAVEclient convenience layer that provides a materialization-compatible query interface on top of catalog-hosted table dumps (e.g., using Polars to mimic `client.materialize.query_table()`) should be straightforward to build. This is not part of the catalog service itself — it is a client-side concern that the catalog's design must not preclude.
+- Replacing MaterializationEngine's query API — the catalog serves static dumps, not live queries. 
 - Per-row or per-cell lineage tracking — the catalog describes asset-level and column-level relationships, not row-level references
 - Full Iceberg REST Catalog or Delta Sharing protocol compliance (can be added later as additive endpoints)
+
+**Possible Future Goals:**
+- Enable stored view definitions (SQL templates + asset references) that can be resolved client-side for cross-table joins in DuckDB/Polars
+- Door open to future compatibility with Iceberg, Neuroglancer precomputed, skeletons, or other cloud bucket assets.
+- However, a future CAVEclient convenience layer that provides a materialization-compatible query interface on top of catalog-hosted table dumps (e.g., using Polars to mimic `client.materialize.query_table()`) should be straightforward to build. This is not part of the catalog service itself — it is a client-side concern that the catalog's design must not preclude.
 
 ## Decisions
 
@@ -97,12 +102,12 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 
 ### 8. Phased delivery
 
-**Decision**: Four phases, each independently useful:
+**Decision**: Three committed phases, each independently useful, plus one potential phase:
 - **Phase 0**: Asset registry + discovery + synchronous validation
 - **Phase 1**: Credential vending + middle_auth gating on access
 - **Phase 1.5**: Structured CAVE references (CAVE entity type + column mapping)
 - **Phase 2**: View definitions + resolution
-- **Phase 3**: Broader asset types (meshes, skeletons, precomputed), TTL/lifecycle
+- **Phase 3 (potential)**: Broader asset types (meshes, skeletons, precomputed annotations), TTL/lifecycle — not committed; depends on whether the need is clear after Phases 0–2 are in use
 
 ## Risks / Trade-offs
 
@@ -119,7 +124,7 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 
 ## Naming Conventions (to discuss as a group)
 
-- **Service name**: "catalog" vs "registry" — "catalog" implies browsing and discovery; "registry" implies registration and lookup. Both are accurate. Needs to be distinct from existing CAVE services (`storekit` is taken, `registry` collides with the existing container/Helm registry service).
+- **Service name**: "catalog" vs "registry" vs "manifest" — "catalog" implies browsing and discovery but "data catalog" is slightly overloaded and has a specific meaning at the Allen Institute; "registry" implies registration and lookup but "register" is overloaded in connectomics (image registration); "manifest" (a list of cargo with metadata) fits the thin-metadata-layer design and avoids both collisions but is less standard.
 - **`mat_version` vs `materialization_version`**: The field name in the data model. `mat_version` is shorter and matches common CAVE shorthand. `materialization_version` is more explicit and self-documenting for newcomers. The existing MaterializationEngine API uses `version` in its paths.
 - **Layout variants**: Convention for naming physical layout variants of the same logical dataset. Current proposal: `name.layout_suffix` (e.g., `synapses.by_pre_root`, `synapses.spatial`) with `properties.base_name` linking back to the logical dataset name. Alternatives: separate `layout` field, hierarchical names (`synapses/by_pre_root`), or flat distinct names with a tag/property for grouping.
 

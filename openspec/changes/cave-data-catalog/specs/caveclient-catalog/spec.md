@@ -32,7 +32,12 @@ The `CatalogClient` SHALL provide a `register_asset()` method accepting `name`, 
 - **WHEN** a user calls `client.catalog.register_asset(name="synapses", mat_version=943, uri="gs://bucket/path/", format="delta", asset_type="table", is_managed=True)`
 - **THEN** the method SHALL POST to the catalog API and return the created asset record with a generated ID and `revision=1`
 
-### Requirement: Get access credentials
+### Requirement: Validate an asset before registration
+The `CatalogClient` SHALL provide a `validate_asset()` method accepting the same parameters as `register_asset()`. It SHALL POST to the server's `/api/v1/assets/validate` endpoint and return the structured validation report without creating an asset.
+
+#### Scenario: Validate a table before registering
+- **WHEN** a user calls `client.catalog.validate_asset(name="synapses", mat_version=943, uri="gs://bucket/path/", format="delta", asset_type="table", is_managed=True)`
+- **THEN** the method SHALL return a validation report with pass/fail status for each check
 The `CatalogClient` SHALL provide a `get_access(asset_id)` method that returns a dictionary containing `uri`, `format`, `token` (or None), `token_type`, and `expires_in`.
 
 #### Scenario: Get credentials for managed asset

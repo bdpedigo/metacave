@@ -47,7 +47,20 @@ The system SHALL accept asset registration via `POST /api/v1/assets/register` wi
 - **WHEN** a caller without write permission on the specified datastack attempts to register an asset
 - **THEN** the system SHALL return 403 Forbidden
 
-### Requirement: Asset listing and filtering
+### Requirement: Dry-run validation endpoint
+The system SHALL provide `POST /api/v1/assets/validate` which accepts the same request body as `/api/v1/assets/register` and runs the identical validation pipeline (caller authorization, duplicate check, URI reachability, format sniff, source-conditional checks) but SHALL NOT create an asset record. The response SHALL return a structured validation report listing each check with its pass/fail status and any error details.
+
+#### Scenario: All validations pass
+- **WHEN** an authorized user POSTs a valid asset body to `/api/v1/assets/validate` and all checks pass
+- **THEN** the system SHALL return 200 with a validation report where every check has `passed: true`
+
+#### Scenario: Some validations fail
+- **WHEN** a user POSTs an asset body to `/api/v1/assets/validate` where the URI is unreachable but other checks pass
+- **THEN** the system SHALL return 200 with a validation report showing `uri_reachable: { passed: false, message: "..." }` and all other checks with their actual results
+
+#### Scenario: Duplicate detected in dry run
+- **WHEN** a user POSTs an asset body to `/api/v1/assets/validate` and an asset with the same `(datastack, name, mat_version, revision)` already exists
+- **THEN** the system SHALL return 200 with a validation report showing `duplicate_check: { passed: false, existing_id: "..." }`
 The system SHALL provide `GET /api/v1/assets/` for listing assets, scoped by datastack. The endpoint SHALL support filtering by query parameters: `datastack` (required), `name` (optional), `mat_version` (optional), `revision` (optional), `format` (optional), `asset_type` (optional), `mutability` (optional), `maturity` (optional). The system SHALL NOT return assets whose `expires_at` is in the past.
 
 #### Scenario: List all assets for a datastack

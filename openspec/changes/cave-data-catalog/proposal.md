@@ -4,7 +4,7 @@ CAVE's materialized annotation data lives exclusively in PostgreSQL, making it i
 
 ## What Changes
 
-- **New service: CAVE Data Catalog** — a thin FastAPI + PostgreSQL metadata registry for data assets stored in cloud object storage (GCS primarily, with S3 support for public/external datasets and future deployments).
+- **New service: CAVE Catalog** — a thin FastAPI + PostgreSQL metadata registry for data assets stored in cloud object storage (GCS primarily, with S3 support for public/external datasets and future deployments).
 - **Asset registration API** — producers (MaterializationEngine, pipelines, data scientists) write data to buckets independently, then register assets via a REST API with synchronous validation (dedup, auth, URI reachability, format sniffing, source-conditional checks like verifying mat table existence).
 - **Discovery API** — consumers list/search/filter assets scoped by datastack and version.
 - **Credential vending API** — for managed assets, the service issues prefix-scoped, short-lived credentials gated by middle_auth permissions (GCS downscoped OAuth tokens initially; S3 STS tokens when needed). Unmanaged (public/external) assets pass through URIs without tokens.
