@@ -1,6 +1,6 @@
 ## 1. Project Scaffolding
 
-- [ ] 1.1 Create new service repository/directory with FastAPI project structure (pyproject.toml, src layout, Dockerfile)
+- [ ] 1.1 Create new service repository/directory with FastAPI project structure (pyproject.toml, src layout, Dockerfile). The repo is in submodules/catalog.
 - [ ] 1.2 Add SQLAlchemy model for `assets` table (id, datastack, name, mat_version, revision, uri, format, asset_type, owner, is_managed, mutability, maturity, properties JSONB, access_group, created_at, expires_at) with two partial unique indexes for nullable mat_version
 - [ ] 1.3 Add Alembic migration for initial `assets` table creation
 - [ ] 1.4 Add middle_auth_client dependency and configure auth decorators for read/write permission checks scoped by datastack

@@ -101,3 +101,6 @@
 [submodule "submodules/storekit"]
 	path = submodules/storekit
 	url = https://github.com/bdpedigo/storekit.git
+[submodule "submodules/catalog"]
+	path = submodules/catalog
+	url = https://github.com/bdpedigo/catalog.git
