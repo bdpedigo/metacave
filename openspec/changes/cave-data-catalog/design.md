@@ -12,6 +12,7 @@ The stack is Python-first (Flask/FastAPI), runs on GKE, uses PostgreSQL for stat
 - Integrate with the existing CAVE stack: middle_auth for auth, CAVEclient for programmatic access. Include enough metadata about materialization / chunkedgraph that linking is possible.
 - First-class support for some initial tabular data formats (Delta Lake, Lance, Parquet). See below about future support for other formats.
 - Where possible, avoid becoming authoritative over format-specific metadata (schema, partitioning, etc.) since this is often advertised by the format (e.g. _delta_log, Neuroglancer info)
+- Enable stored view definitions (SQL templates + asset references) that can be resolved client-side for cross-table joins in DuckDB/Polars
 - Design incrementally: each phase is independently useful
 
 **Non-Goals:**
@@ -23,9 +24,9 @@ The stack is Python-first (Flask/FastAPI), runs on GKE, uses PostgreSQL for stat
 - Full Iceberg REST Catalog or Delta Sharing protocol compliance (can be added later as additive endpoints)
 
 **Possible Future Goals:**
-- Enable stored view definitions (SQL templates + asset references) that can be resolved client-side for cross-table joins in DuckDB/Polars
 - Door open to future compatibility with Iceberg, Neuroglancer precomputed, skeletons, or other cloud bucket assets.
 - However, a future CAVEclient convenience layer that provides a materialization-compatible query interface on top of catalog-hosted table dumps (e.g., using Polars to mimic `client.materialize.query_table()`) should be straightforward to build. This is not part of the catalog service itself — it is a client-side concern that the catalog's design must not preclude.
+- Further separation of concerns where materialization service handle bound spatial points and root ID updating, catalog handling the backend of tabular storage.
 
 ## Decisions
 
@@ -102,12 +103,14 @@ Additional top-level fields beyond the natural key: `mutability` (enum: `"static
 
 ### 8. Phased delivery
 
-**Decision**: Three committed phases, each independently useful, plus one potential phase:
 - **Phase 0**: Asset registry + discovery + synchronous validation
 - **Phase 1**: Credential vending + middle_auth gating on access
 - **Phase 1.5**: Structured CAVE references (CAVE entity type + column mapping)
 - **Phase 2**: View definitions + resolution
-- **Phase 3 (potential)**: Broader asset types (meshes, skeletons, precomputed annotations), TTL/lifecycle — not committed; depends on whether the need is clear after Phases 0–2 are in use
+
+**Possible extensions:**
+- Unified query interface for materialization/catalog in CAVEclient
+- Broader asset types (meshes, skeletons, precomputed annotations), TTL/lifecycle — not committed; depends on whether the need is clear after Phases 0–2 are in use
 
 ## Risks / Trade-offs
 
