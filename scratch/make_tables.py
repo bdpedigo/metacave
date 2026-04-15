@@ -9,14 +9,22 @@
 # ]
 #
 # [tool.uv.sources]
-# caveclient = { path = "../submodules/caveclient" }
+# caveclient = { path = "../submodules/caveclient", editable = true }
 # ///
 # %%
+
 
 
 from caveclient import CAVEclient
 
 client = CAVEclient("minnie65_phase3_v1", version=1412)
+
+client.materialize.get_tables()
+
+#%%
+dir(client.auth)
+client.auth.request_header
+#%%
 dir(client.catalog)
 
 client.catalog._default_url_mapping["catalog_server_address"] = "http://127.0.0.1:8000"
@@ -26,24 +34,30 @@ print(client.catalog.list_assets())
 # %%
 
 client.catalog.register_asset(
-    name="aibs_cell_info",
+    name="synapses_pni_2",
     uri="gs://mat_dbs/test/aibs_cell_info.parquet",
     format="parquet",
     asset_type="table",
     is_managed=False,
     mat_version=1412,
-    revision=2,
+    revision=1,
     mutability="static",
     maturity="stable",
+    properties={
+        "source_table": "synapses_pni_2",
+        "source": "materialization",
+        "mat_version": 1412,
+    },
 )
 
-#%%
+# %%
 client.catalog.list_assets()
 
 # %%
 table = client.materialize.query_view("aibs_cell_info")
 
-table.to_parquet("aibs_cell_info.parquet")
+# %%
+table.to_csv("aibs_cell_info.csv")
 
 # %%
 

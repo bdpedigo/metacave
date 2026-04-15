@@ -49,7 +49,7 @@ The stack is Python-first (Flask/FastAPI), runs on GKE, uses PostgreSQL for stat
 
 ### 3. Data model: `(datastack, name, mat_version, revision)` as natural key
 
-**Decision**: Single `assets` table in PostgreSQL. The natural key is `(datastack, name, mat_version, revision)` where `mat_version` is a nullable integer (the CAVE materialization version, if applicable) and `revision` is a non-null integer defaulting to 1 (the asset's own iteration). Because PostgreSQL treats NULLs as distinct in UNIQUE constraints, uniqueness is enforced via two partial unique indexes:
+**Decision**: Single `assets` table in PostgreSQL. The natural key is `(datastack, name, mat_version, revision)` where `mat_version` is a nullable integer (the CAVE materialization version, if applicable) and `revision` is a non-null integer defaulting to 0 (the asset's own iteration, 0-indexed — the first upload is revision 0). Because PostgreSQL treats NULLs as distinct in UNIQUE constraints, uniqueness is enforced via two partial unique indexes:
 
 ```sql
 CREATE UNIQUE INDEX assets_unique_with_mat

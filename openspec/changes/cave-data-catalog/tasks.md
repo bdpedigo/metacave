@@ -33,9 +33,9 @@
 
 ## 4. Integration Smoke Test with Real Data
 
-- [ ] 4.1 Prepare test data: upload a few parquet dumps of minnie65_public materialized tables and a couple of one-off derived tables to a dedicated GCS test bucket (bucket path is configurable via env var)
-- [ ] 4.2 Set up local environment for real-infra testing: `gcloud auth application-default login` for GCS access, Docker pg from section 3, `AUTH_ENABLED=true` + `AUTH_SERVICE_URL` pointing at the global middle_auth instance (`https://globalv1.daf-apis.com/auth`)
-- [ ] 4.3 Register real assets via `CatalogClient` using a real middle_auth token and `minnie65_public` as the datastack — verify the full client→server→middle_auth auth handshake works
+- [x] 4.1 Prepare test data: upload a few parquet dumps of minnie65_public materialized tables and a couple of one-off derived tables to a dedicated GCS test bucket (bucket path is configurable via env var)
+- [x] 4.2 Set up local environment for real-infra testing: `gcloud auth application-default login` for GCS access, Docker pg from section 3, `AUTH_ENABLED=true` + `AUTH_SERVICE_URL` pointing at the global middle_auth instance (`https://globalv1.daf-apis.com/auth`)
+- [x] 4.3 Register real assets via `CatalogClient` using a real middle_auth token and `minnie65_public` as the datastack — verify the full client→server→middle_auth auth handshake works
 - [ ] 4.4 Validate URI reachability checks work against real GCS objects (using ADC credentials), including format sniff for parquet files
 - [ ] 4.5 Register assets with different formats and properties — mat table dumps (with `properties.source: "materialization"`), one-off derived tables, verify listing/filtering/get all return correct results
 - [ ] 4.6 Test error paths: register with a bad GCS URI (non-existent object), wrong datastack, expired/missing auth token — verify appropriate error responses

@@ -208,3 +208,4 @@ __marimo__/
 
 *.DS_Store
 aibs_cell_info.parquet
+aibs_cell_info.csv
