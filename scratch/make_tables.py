@@ -34,13 +34,13 @@ print(client.catalog.list_assets())
 # %%
 
 client.catalog.register_asset(
-    name="synapses_pni_2",
-    uri="gs://mat_dbs/test/aibs_cell_info.parquet",
+    name="synapses_pni_3",
+    uri="gs://mat_dbs/test/aibs_cell_info.csv",
     format="parquet",
     asset_type="table",
     is_managed=False,
     mat_version=1412,
-    revision=1,
+    revision=3,
     mutability="static",
     maturity="stable",
     properties={
