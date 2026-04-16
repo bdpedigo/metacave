@@ -1,3 +1,8 @@
+## Deployment / Infrastructure (terraform-google-cave, CAVEdeployment)
+
+**Q: How does CAVE create and configure a PostgreSQL database backend for services like MaterializationEngine and AnnotationEngine?**
+Both systems provision a **Google Cloud SQL for PostgreSQL 13** instance via either Terraform (`google_sql_database_instance` resource in `terraform-google-cave`) or `gcloud sql instances create` bash scripts (`CAVEdeployment`); two databases are created on the local cluster instance — `annotation` and `materialization`. Credentials are pre-seeded into Google Secret Manager (new system) or stored as Kubernetes secrets from JSON key files (legacy), and all service pods access the database via a Cloud SQL Auth Proxy sidecar that exposes the remote instance as `localhost`. Schema initialization is not handled by either infra system — DynamicAnnotationDB creates tables dynamically via SQLAlchemy, and MaterializationEngine runs `flask migrator auto-migrate` as a Kubernetes Job at deploy time. See [submaps/postgres-provisioning.md](submaps/postgres-provisioning.md) for full details.
+
 ## NeuroglancerJsonServer
 
 **Q: What is the backend for NeuroglancerJsonServer?**
