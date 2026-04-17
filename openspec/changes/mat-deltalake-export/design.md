@@ -53,23 +53,26 @@ The catalog service already supports registering Delta Lake assets (`format: "de
 
 **Rationale**: This bounds peak memory to approximately `flush_threshold * 2` (one buffer being written, one accumulating) regardless of total table size. The flush threshold is tunable per deployment.
 
+**Note on small-file write pattern**: This approach produces many small Parquet files before OPTIMIZE compacts them (e.g., ~25 flushes × 64 partitions = ~1,600 files per Delta Lake for a 50 GB table). An alternative would be buffering to per-partition files on local disk to produce fewer, larger uploads. We chose the append-then-optimize pattern because: (1) GCS write costs are trivial at this scale (~$0.008 for 1,600 Class A operations), and (2) `write_deltalake(..., mode="append")` handles partitioned writes natively, so there is less custom plumbing to design and maintain. The append-then-optimize pattern is also idiomatic Delta Lake (how Spark structured streaming, Databricks Auto Loader, etc. all work). A side benefit we're not currently exploiting is durability—each flush commits data to GCS, so a future resumable-write implementation could pick up where a failed run left off. If OPTIMIZE proves slow at high file counts, the simplest lever is increasing the flush threshold.
+
 ### 4. Partition assignment strategy (configurable)
 
-**Decision**: The partition assignment function is configurable per output spec. The implementation must support at least two strategies:
+**Decision**: The partition assignment function is configurable per output spec. The implementation must support at least three strategies:
 
-- **Range bucketing**: Compute approximate percentile boundaries via a Postgres pre-query, then assign rows to buckets by binary search. This preserves natural ordering within each bucket, making Parquet min/max statistics tight and contiguous—any reader (DuckDB, Polars, Spark) can prune files on predicates like `WHERE pre_pt_root_id = 42` without knowledge of the bucketing scheme.
+- **Range bucketing** (`"range"`): Compute approximate percentile boundaries via a Postgres pre-query, then assign rows to buckets by binary search. This preserves natural ordering within each bucket, making Parquet min/max statistics tight and contiguous—any reader (DuckDB, Polars, Spark) can prune files on predicates like `WHERE pre_pt_root_id = 42` without knowledge of the bucketing scheme.
   ```sql
   SELECT percentile_disc(generate_series(1, N-1) / N::float)
          WITHIN GROUP (ORDER BY partition_column)
   FROM table_name;
   ```
-- **Hash bucketing**: `hash(value) % N`. Simple and produces even bucket sizes, but scatters values randomly so file-level min/max stats are useless for pruning.
+- **Hash bucketing** (`"hash"`): `hash(value) % N`. Simple and produces even bucket sizes, but scatters values randomly so file-level min/max stats are useless for pruning.
+- **No partitioning** (`None` / `partition_by: null`): Write a single flat Delta Lake with no partition column. Relies entirely on z-ordering and bloom filters for query performance. Simplest path—no pre-query, no bucket assignment—and viable for smaller tables or when z-order alone provides sufficient pruning. Without partition directories, the output is a flat set of Parquet files (compacted by OPTIMIZE). A reader must consult every file's min/max statistics in the Delta log to determine which files to read—there's no directory-level pruning shortcut. Z-ordering makes those per-file stats tight so most files can still be skipped, and the stat scan itself is cacheable and cheap relative to reading actual data.
 
 Which strategy is the right default (and whether other strategies are needed) is TBD and will be refined through experimentation. The key design requirement is that the strategy is pluggable per output spec.
 
-**Partition count**: When `n_partitions` is `"auto"`, determined by `max(1, estimated_raw_size / target_size)`, where `target_size` defaults to 256 MB post-compression. `row_count` comes from `MaterializedMetadata`. Can be overridden to an explicit integer in the output spec.
+**Partition count**: When `n_partitions` is `"auto"`, determined by `max(1, estimated_raw_size / target_size)`, where `target_size` defaults to 256 MB post-compression. `row_count` comes from `MaterializedMetadata`. Can be overridden to an explicit integer in the output spec. Ignored when partition strategy is `None`.
 
-**Trade-off**: Range bucketing requires a pre-scan query (one sequential pass for percentiles) but produces reader-friendly output. Hash bucketing is zero-cost to compute but requires partition-aware readers. No partitioning (z-order only) is viable for smaller tables but may not scale to very large tables with thousands of files.
+**Trade-off**: Range bucketing requires a pre-scan query (one sequential pass for percentiles) but produces reader-friendly output. Hash bucketing is zero-cost to compute but requires partition-aware readers. No partitioning is the simplest and works well for smaller tables, but may produce very large files for big tables unless combined with aggressive z-ordering.
 
 ### 5. Dedicated Celery queue
 
