@@ -80,17 +80,36 @@ Which strategy is the right default (and whether other strategies are needed) is
 
 **Rationale**: The writer task has a fundamentally different resource profile from existing mat engine tasks (root ID updates, annotation ingestion). Mixing them on the same queue risks OOM on small workers or underutilization of large ones.
 
-### 6. Frozen DB as source, with fallback JOIN logic
+### 6. Frozen DB as source, with JOIN-based streaming
 
-**Decision**: Read from the merged flat table in the frozen DB. If the table is not merged (e.g., `merge_tables` was skipped or the frozen DB predates the merge workflow), fall back to joining annotation + segmentation tables using the same JOIN logic as `merge_tables` in `create_frozen_database.py`.
+**Decision**: Stream from the frozen Postgres DB via ADBC. The SQL query passed to ADBC depends on the table structure. For most tables, the annotation and segmentation data live in separate tables (`<table>` and `<table>__segmentation`) that must be joined. Some tables may already be merged into a single flat table (via `merge_tables` in the frozen DB workflow), and some tables have no segmentation columns at all. The writer detects which case applies and constructs the appropriate SQL:
 
-**Rationale**: The frozen DB workflow merges tables via `CREATE TABLE temp AS (SELECT a.*, s.* FROM anno JOIN seg ON id)`, drops the originals, and renames. So normally the merged table is what you get. But some historical frozen DBs or edge cases may have unmerged tables. The fallback ensures the writer works in both cases.
+```python
+# Case 1: Separate annotation + segmentation tables (most common)
+cursor.execute("""
+    SELECT a.*, s.*
+    FROM synapse_table a
+    JOIN synapse_table__segmentation s ON a.id = s.id
+""")
+
+# Case 2: Already-merged flat table
+cursor.execute("SELECT * FROM synapse_table_merged")
+
+# Case 3: No segmentation columns (annotation-only table)
+cursor.execute("SELECT * FROM no_seg_table")
+```
+
+Everything downstream (buffering, partitioning, writing) is identical — it just sees Arrow batches regardless of which SQL path was taken.
+
+**Rationale**: The frozen DB workflow *can* merge tables via `CREATE TABLE temp AS (SELECT a.*, s.* FROM anno JOIN seg ON id)`, drop the originals, and rename — but in practice many frozen databases don't have merged tables. Handling the JOIN in the ADBC query rather than requiring a pre-merged table makes the writer work against any frozen DB without preconditions. Streaming the JOIN result directly also avoids materializing a redundant intermediate table on the Postgres side.
 
 ### 7. WKB geometry column handling
 
 **Decision**: Geometry columns arrive as binary WKB bytes from ADBC. Decode them per-batch using vectorized operations (Polars `map_batches` with `shapely.from_wkb`) into coordinate arrays (List[Int32]) before writing to Delta Lake.
 
 **Rationale**: Delta Lake consumers need usable coordinates, not opaque WKB blobs. Batch-level vectorized decoding via shapely is fast enough and matches the prototype's approach.
+
+**Alternative considered**: Decode geometry on the Postgres side by projecting coordinate extraction functions in the SQL query (e.g., `ST_X(geom)`, `ST_Y(geom)`, `ST_Z(geom)` or `array[ST_X(geom), ST_Y(geom), ST_Z(geom)]`). This would give ADBC clean numeric columns directly. Rejected for now because it ties the column transformation to the SQL layer rather than keeping it in application code we fully control, and means every geometry column needs custom SQL projection rather than a generic `SELECT *`. Client-side decoding is simpler to implement and change. It's possible a future ADBC version or a custom SQL query could handle this server-side if shapely decoding proves to be a bottleneck, but it's unlikely to matter at the batch sizes we're working with.
 
 ## Risks / Trade-offs
 

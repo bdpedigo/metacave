@@ -1,8 +1,8 @@
 ## Why
 
-Materialized annotation tables currently live only in frozen PostgreSQL databases. Users who need bulk analytical access (e.g., "give me all synapses for root X") must query through the materialization API, which is row-oriented and not optimized for large scans. A workaround exists—a `dump_csv_table` endpoint that exports a full table as a compressed CSV to GCS—but this produces 50 GB+ intermediate files, loses type fidelity (booleans become "t"/"f" strings, geometry becomes hex WKB), and requires a separate VM to convert into a query-friendly format.
+Materialized annotation tables currently live only in frozen PostgreSQL databases. Users who need bulk analytical access (e.g., "give me proofread synapses to inhibitory cells") must query through the materialization API, which has limits and can get bogged down by very large scans. A workaround exists—a `dump_csv_table` endpoint that exports a full table as a compressed CSV to GCS—but this produces 50 GB+ intermediate files, loses type fidelity (booleans become "t"/"f" strings, geometry becomes hex WKB), and requires a separate VM to convert into a query-friendly format.
 
-We need a first-class path from frozen materialization databases to Delta Lake format on cloud storage, registered in the catalog service. Delta Lake gives columnar storage, predicate pushdown, z-ordering, and bloom filters—dramatically faster for the analytical queries downstream consumers actually run.
+We need a first-class path from frozen materialization databases to Delta Lake format on cloud storage. In the future these will be registered in the catalog service. Delta Lake gives columnar storage, predicate pushdown, z-ordering, and bloom filters—dramatically faster for the analytical queries downstream consumers actually run.
 
 ## What Changes
 

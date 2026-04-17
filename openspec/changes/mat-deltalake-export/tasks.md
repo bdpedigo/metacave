@@ -27,10 +27,9 @@
 
 ## 5. Core Streaming Writer
 
-- [ ] 5.1 Implement `stream_table_to_arrow(connection_string, table_name, chunk_size)`: ADBC streaming reader that yields Arrow RecordBatches
-- [ ] 5.2 Implement fallback SQL query for unmerged tables: JOIN annotation + segmentation on `id`, matching the `merge_tables` logic in `create_frozen_database.py`
+- [ ] 5.1 Implement `stream_table_to_arrow(connection_string, table_name, chunk_size)`: ADBC streaming reader that yields Arrow RecordBatches. Detect table structure and construct appropriate SQL: JOIN annotation + segmentation tables on `id` (most common), `SELECT *` from already-merged table, or `SELECT *` from annotation-only table (no segmentation columns)
 - [ ] 5.3 Implement `decode_geometry_columns(batch, geometry_columns)`: vectorized WKB → `List[Int32]` coordinate array decoding per Arrow batch
-- [ ] 5.4 Implement buffered write loop: accumulate batches, on flush → assign buckets per output spec's partition strategy → `write_deltalake(..., mode="append", partition_by=...)` for each Delta Lake
+- [ ] 5.4 Implement buffered write loop: accumulate batches, on flush → assign buckets per output spec's partition strategy (range, hash, or skip if `None`) → `write_deltalake(..., mode="append", partition_by=...)` for each Delta Lake; when partition strategy is `None`, write without `partition_by`
 
 ## 6. Tests: Core Streaming Writer
 
