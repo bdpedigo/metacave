@@ -23,7 +23,7 @@ from pathlib import Path
 
 import polars as pl
 from caveclient import CAVEclient
-from nglui.precomputed import AnnotationDataFrameWriter
+from nglui.precomputed import PointAnnotationWriter
 from nglui.statebuilder import ViewerState
 
 # %% LOAD SYNAPSE TABLES
@@ -51,7 +51,7 @@ client = CAVEclient("minnie65_public")
 print("Done initializing CAVE client.")
 
 print("Writing precomputed data...")
-writer = AnnotationDataFrameWriter(
+writer = PointAnnotationWriter(
     segmentation_source=client,
     point_column=["ctr_pt_position_x", "ctr_pt_position_y", "ctr_pt_position_z"],
     property_columns=[
@@ -66,11 +66,12 @@ writer = AnnotationDataFrameWriter(
     id_column="synapse_id",
     data_resolution=[4, 4, 40],
     write_sharded=True,
-    limit=10_000
+    limit=10_000,
 )
 
 # out_path = "/Users/ben.pedigo/code/meshrep/meshrep/data/test_local_precomputed"
-out_path = "gs://allen-minnie-phase3/bdp-synapse-mega-tables/column-precomputed"
+# out_path = "gs://allen-minnie-phase3/bdp-synapse-mega-tables/column-precomputed-test"
+out_path = "tmp/precomputed/column-precomputed"
 
 # clear out_path if it exists
 if not out_path.startswith("gs://") and Path(out_path).exists():
@@ -80,6 +81,42 @@ if not out_path.startswith("gs://") and Path(out_path).exists():
 
 writer.write(synapses, out_path)
 print("Done writing precomputed data.")
+
+# %%
+from nglui.precomputed import LineAnnotationWriter
+
+line_writer = LineAnnotationWriter(
+    segmentation_source=client,
+    point_a_column=["pre_pt_position_x", "pre_pt_position_y", "pre_pt_position_z"],
+    point_b_column=["post_pt_position_x", "post_pt_position_y", "post_pt_position_z"],
+    property_columns=[
+        "size",
+        "pre_cell_type",
+        "post_cell_type",
+        "pre_in_selection",
+        "post_in_selection",
+        "tag_detailed",
+    ],
+    relationship_columns=["pre_pt_root_id", "post_pt_root_id"],
+    id_column="synapse_id",
+    data_resolution=[4, 4, 40],
+    write_sharded=True,
+    limit=10_000,
+)
+out_path = "gs://allen-minnie-phase3/bdp-synapse-mega-tables/column-precomputed-test-line"
+
+line_writer.write(synapses, out_path)
+print("Done writing line precomputed data.")
+
+# %%
+
+# # print the resulting info JSON metadata
+# import json
+
+# info_path = Path(out_path) / "info"
+# with open(info_path, "r") as f:
+#     info = json.load(f)
+# print(json.dumps(info, indent=2))
 
 # %%
 
@@ -126,8 +163,8 @@ if out_path.startswith("gs://"):
         .add_layers_from_client()
         .add_annotation_source(
             f"precomputed://{out_path}",
-            relationship_columns=["pre_pt_root_id", "post_pt_root_id"],
-            shader=shader,
+            # relationship_columns=["pre_pt_root_id", "post_pt_root_id"],
+            # shader=shader,
         )
     )
     vs.to_browser(shorten=True)
@@ -166,7 +203,7 @@ else:
         .add_layers_from_client()
         .add_annotation_source(
             f"precomputed://http://localhost:{addr}",
-            relationship_columns=["pre_pt_root_id", "post_pt_root_id"],
+            # relationship_columns=["pre_pt_root_id", "post_pt_root_id"],
         )
     )
     vs.to_browser()
@@ -177,7 +214,6 @@ else:
     except KeyboardInterrupt:
         httpd.shutdown()
         print("Server stopped.")
-
 
 
 # %%
@@ -493,7 +529,7 @@ assignments = sit.transform(
 )
 
 
-#%%
+# %%
 
 from caveclient import CAVEclient
 
@@ -503,19 +539,20 @@ client = CAVEclient("minnie65_public")
 back_state = 5624542562091008
 state_info = client.state.get_state_json(back_state)
 
-#%%
+# %%
 import neuroglancer
 
 viewer = neuroglancer.Viewer()
 viewer.set_state(state_info)
 
 
-
-#%%
-from nglui.statebuilder import ViewerState 
-from PIL import Image
-from neuroglancer.webdriver import Webdriver
+# %%
 from webbrowser import open as open_browser
+
+from neuroglancer.webdriver import Webdriver
+from nglui.statebuilder import ViewerState
+from PIL import Image
+
 vs = ViewerState(base_state=state_info, interactive=True)
 # # img = vs.viewer.screenshot(size=(400, 400))
 

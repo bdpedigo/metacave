@@ -1,29 +1,32 @@
 ## 1. Spike: ADBC + PostGIS Validation
 
 - [ ] 1.1 Write a test script that connects to a frozen DB via `adbc-driver-postgresql` and streams a small table with geometry columns; verify Arrow batch types and WKB binary format
-- [ ] 1.2 Verify ADBC works through the existing Cloud SQL Auth Proxy connection path used by Celery workers
+- [ ] 1.2 Verify ADBC works through the existing Cloud SQL Auth Proxy connection path used by Celery workers. Prompt the user for info about connecting to the Cloud SQL proxy if it is not clear how to do so. 
 
 ## 2. Dependencies and Project Setup
 
-- [ ] 2.1 Add `adbc-driver-postgresql`, `deltalake`, and `polars` to MaterializationEngine's `pyproject.toml`
+- [ ] 2.1 Add `adbc-driver-postgresql`, `deltalake`, and `polars` to MaterializationEngine's `pyproject.toml`. Make sure to use uv add commands here
 - [ ] 2.2 Verify dependency compatibility with existing packages (especially `pyarrow` version alignment)
 
 ## 3. Output Spec and Partition Planning
 
 - [ ] 3.1 Create `materializationengine/workflows/deltalake_export.py` module
-- [ ] 3.2 Define `DeltaLakeOutputSpec` dataclass: `partition_by` (str | None), `partition_strategy` ("range" | "hash" | None), `n_partitions` (int | "auto"), `zorder_columns` (list[str]), `bloom_filter_columns` (list[str])
-- [ ] 3.3 Implement `discover_default_output_specs(table_name, engine)`: derive default output specs from table metadata (indexes, column types, etc.); exact heuristic TBD but code path must support any column for partition/z-order/bloom
-- [ ] 3.4 Implement `resolve_n_partitions(n_partitions, row_count, target_file_size_mb=256)`: if `"auto"`, compute from `MaterializedMetadata.row_count`; otherwise pass through explicit value
+- [ ] 3.2 Define `DeltaLakeOutputSpec` dataclass: `partition_by` (str | None), `partition_strategy` ("percentile_range" | "uniform_range" | "hash" | None), `n_partitions` (int | "auto"), `zorder_columns` (list[str]), `bloom_filter_columns` (list[str])
+- [ ] 3.3 Implement `discover_default_output_specs(table_name, engine)`: derive default output specs from table metadata (indexes, column types, etc.); exact heuristic TBD but code path must support any column for partition/z-order/bloom. For now, make the heuristic infer one output spec per indexed column, and make that column partitioned and z-ordered but not bloom filtered.
+- [ ] 3.4 Implement `resolve_n_partitions(n_partitions, row_count, target_file_size_mb=256)`: if `"auto"`, compute from `MaterializedMetadata.row_count`; otherwise pass through explicit value. Target file size should be easily configurable.
 - [ ] 3.5 Implement `compute_bucket_boundaries(connection_string, table_name, column_name, n_partitions)`: run `SELECT percentile_disc(generate_series(1, N-1) / N::float) WITHIN GROUP (ORDER BY col) FROM table` to get N-1 boundary values
-- [ ] 3.6 Implement `assign_range_bucket(table, column_name, boundaries)`: use `polars.cut()` with percentile boundaries to produce `{column}_partition` column
-- [ ] 3.7 Implement `assign_hash_bucket(table, column_name, n_partitions)`: `hash(value) % n_partitions` to produce `{column}_partition` column
+- [ ] 3.6 Implement `assign_percentile_range_bucket(table, column_name, boundaries)`: use `polars.cut()` or a similar method with percentile boundaries to produce `{column}_partition` column
+- [ ] 3.7 Implement `assign_uniform_range_bucket(table, column_name, min_val, max_val, n_partitions)`: divide the `[min_val, max_val]` range into `n_partitions` equal-width bins and assign each row to a bucket, producing `{column}_partition` column
+- [ ] 3.8 Implement `assign_hash_bucket(table, column_name, n_partitions)`: `hash(value) % n_partitions` to produce `{column}_partition` column
 
 ## 4. Tests: Output Spec and Partition Planning
 
 - [ ] 4.1 Unit test `discover_default_output_specs` with mock table metadata
 - [ ] 4.2 Unit test `resolve_n_partitions` heuristic with various row counts
 - [ ] 4.3 Unit test `compute_bucket_boundaries` with a small Postgres table; verify boundary values are approximate percentiles
-- [ ] 4.4 Unit test `assign_range_bucket` distribution: verify rows are assigned to buckets with roughly equal counts and contiguous value ranges
+- [ ] 4.4 Unit test `assign_percentile_range_bucket` distribution: verify rows are assigned to buckets with roughly equal counts and contiguous value ranges
+- [ ] 4.5 Unit test `assign_uniform_range_bucket`: verify rows are assigned to equal-width buckets spanning min to max
+- [ ] 4.6 Pause here - ask the user for feedback on the design so far before continuing
 
 ## 5. Core Streaming Writer
 
@@ -34,20 +37,21 @@
 ## 6. Tests: Core Streaming Writer
 
 - [ ] 6.1 Unit test `decode_geometry_columns` with sample WKB binary data
-- [ ] 6.2 Integration test: end-to-end export of a small test table to a local Delta Lake (using local Postgres in CI)
+- [ ] 6.2 Integration test: end-to-end export of a small test table to a local Delta Lake (using local Postgres in CI).
 - [ ] 6.3 Integration test: verify explicit output specs override index-derived defaults
 
 ## 7. Delta Lake Optimization
 
 - [ ] 7.1 Implement `optimize_deltalake(uri, zorder_columns, bloom_filter_columns, fpp)`: z-order, bloom filter creation, and vacuum on a completed Delta Lake
 - [ ] 7.2 Read z-order and bloom filter columns from the output spec for each Delta Lake
+- [ ] 7.3 Pause here, consult with the user for feedback on the design so far
 
 ## 8. Celery Task Wiring
 
 - [ ] 8.1 Create Celery task `write_deltalake_table(datastack_info, version, table_name, output_specs=None)` that orchestrates: resolve specs → compute boundaries → stream → write → optimize
 - [ ] 8.2 Add the task module to `celery_init.py` task includes
 - [ ] 8.3 Configure a `deltalake` Celery queue in the worker configuration
-- [ ] 8.4 Add overwrite logic: detect existing partial Delta Lakes (DeltaTable exists but row count doesn't match MaterializedMetadata) and delete before re-writing
+- [ ] 8.4 Add partial-export detection: if a DeltaTable already exists but its row count doesn't match `MaterializedMetadata`, raise an error (e.g. "Delta Lake for table X already exists but appears smaller than expected — may be the result of a partial export")
 
 ## 9. API Endpoint
 

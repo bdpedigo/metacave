@@ -23,7 +23,7 @@ The catalog service already supports registering Delta Lake assets (`format: "de
 - Bulk workflow to export all tables in a frozen database version, hooked into the frozen-database workflow
 
 **Non-Goals:**
-- Resumable writes (v1 uses delete-and-overwrite for partial failures)
+- Resumable writes or automatic overwrite of partial failures (v1 raises an error on detected partial exports)
 - Replacing or removing the existing CSV dump endpoint
 - Reading from the live database (target is frozen DBs only for v1)
 
@@ -126,4 +126,4 @@ Everything downstream (buffering, partitioning, writing) is identical — it jus
 → *Mitigation*: Size the dedicated queue workers appropriately (8-16 GB). The flush threshold is configurable.
 
 **[Partial failure]** If the worker dies mid-write, partially written Delta Lakes remain in GCS. Delta Lake's transaction log makes uncommitted data safe to ignore.
-→ *Mitigation*: On restart, detect partial Delta Lakes (row count mismatch with `MaterializedMetadata`) and overwrite.
+→ *Mitigation*: On restart, detect partial Delta Lakes (row count mismatch with `MaterializedMetadata`) and raise an error describing the mismatch. Manual cleanup is required before re-exporting.
