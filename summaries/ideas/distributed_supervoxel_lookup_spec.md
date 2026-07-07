@@ -2,6 +2,26 @@
 
 Status: exploratory / pre-implementation. This is a thinking document, not a committed API.
 
+- [Distributed Point → Supervoxel Lookup — Design Spec](#distributed-point--supervoxel-lookup--design-spec)
+  - [Basic shape](#basic-shape)
+  - [Key findings from existing code](#key-findings-from-existing-code)
+    - [`cloudvolume.scattered_points` is already smart](#cloudvolumescattered_points-is-already-smart)
+    - [What CloudVolume already owns (do not reinvent)](#what-cloudvolume-already-owns-do-not-reinvent)
+    - [MaterializationEngine already has partial chunking logic](#materializationengine-already-has-partial-chunking-logic)
+  - [Design](#design)
+    - [Coordinate handling](#coordinate-handling)
+    - [Necessity: a partition function](#necessity-a-partition-function)
+    - [Ideal (feature addition): seg-aligned partitioning](#ideal-feature-addition-seg-aligned-partitioning)
+    - [Intra-block memory: LRU reliance and point ordering](#intra-block-memory-lru-reliance-and-point-ordering)
+    - [v0 execution: assume spatially-clustered (or small) input](#v0-execution-assume-spatially-clustered-or-small-input)
+    - [Dense vs. sparse decode flag](#dense-vs-sparse-decode-flag)
+    - [Parallelism: two nested levels](#parallelism-two-nested-levels)
+    - [Output \& resumability](#output--resumability)
+  - [CloudVolume config baseline (from ME's gateway, as reference)](#cloudvolume-config-baseline-from-mes-gateway-as-reference)
+  - [Open decision points](#open-decision-points)
+    - [Decide on choice of parallelization backend (or support multiple)](#decide-on-choice-of-parallelization-backend-or-support-multiple)
+  - [Possible feature additions](#possible-feature-additions)
+
 ## Basic shape
 
 The tool is a four-stage pipeline over a payload of coordinate points:
@@ -18,14 +38,11 @@ The tool is a four-stage pipeline over a payload of coordinate points:
 ```
 
 1. **Scan** — read coordinate points from a parquet / delta lake source (`x, y, z` plus an
-   id/index). Alongside the data location, the user also specifies the **coordinate system**
-   (resolution in nanometers) the input `x, y, z` should be interpreted in. The code converts these into
-   **integer voxels at the resolution CloudVolume expects** (the segmentation's mip level) and
-   carries those integer-voxel coordinates through the rest of the pipeline. If the converted
-   voxel coordinates differ from the input, they are also emitted in the output (see Write) so
-   there is no ambiguity from floating-point input coordinates or the conversion.
+   id/index), interpreted in a user-specified **coordinate system / resolution** (see
+   [Coordinate handling](#coordinate-handling)).
 2. **Partition** — decide how to group those points into **blocks** (our unit of work; the
-   interesting design decision; see the segmentation-aware partitioning below).
+   interesting design decision; see
+   [seg-aligned partitioning](#ideal-feature-addition-seg-aligned-partitioning)).
 3. **Lookup, scaled horizontally** — run the per-partition supervoxel lookup across a scaling
    mechanism. The requirement is that it can **scale out on Kubernetes** or **run on a
    laptop**. The concrete backend is an open question — threads, `joblib`, Ray, and Celery
@@ -47,7 +64,7 @@ Everything else in this document elaborates or extends these four stages. The co
 
 ## Key findings from existing code
 
-### `cloudvolume.scattered_points` is already fairly smart
+### `cloudvolume.scattered_points` is already smart
 
 Citations are pinned permalinks:
 [cloud-volume @ `d1d704c`](https://github.com/seung-lab/cloud-volume/tree/d1d704c9b78484fa49cea8204744f0d18b273624)
@@ -159,9 +176,22 @@ in `workflows/spatial_lookup.py`:
 **Reusable = one concept, not the code:** partition by floored chunk key, emit work only for
 occupied cells. Two possible upgrades: (a) align the grid to the **segmentation** grid, and
 (b) do the group-by in a dataframe instead of PostGIS. Neither is required for a first version
-(see Design); (a) in particular is a feature addition, not a necessity.
+(see [v0 execution](#v0-execution-assume-spatially-clustered-or-small-input)); (a) in
+particular is a feature addition, not a necessity.
 
 ## Design
+
+### Coordinate handling
+
+Alongside the data location, the user specifies the **coordinate system** (resolution, in
+nanometers) that the input `x, y, z` should be interpreted in. The code converts these once, up
+front, into **integer voxels at the resolution CloudVolume expects** (the segmentation's mip
+level) and carries those integer-voxel coordinates through the rest of the pipeline — they are
+the join key for reattaching results (see the
+[`scattered_points` return contract](#necessity-a-partition-function) below) and the
+space every partition/chunk operation lives in. When the converted voxel coordinates differ
+from the input, they are also emitted in the output so there is no ambiguity from
+floating-point input coordinates or the conversion.
 
 ### Necessity: a partition function
 
@@ -196,7 +226,8 @@ the partition function plus a thin per-partition runner is essentially the whole
 > **`scattered_points` return contract.** It returns an **unordered dict keyed by
 > integer-voxel `xyz`**, not an array aligned to input order — so the result must be rejoined
 > on the **carried integer-voxel coordinate** (this is the concrete reason those coords are
-> computed once up front and carried through; see Scan). Points that round to the same voxel
+> computed once up front and carried through; see
+> [Coordinate handling](#coordinate-handling)). Points that round to the same voxel
 > collapse to one key and fan back out to every input row sharing it, so original ids travel
 > alongside separately.
 
@@ -285,7 +316,7 @@ So it is one partition function at two granularities:
 This is not CV-specific — chunk-coherent input helps any chunked/LRU backend, so it is not
 "bending to `scattered_points`' internals." (On sharded volumes it still helps the decode/LRU
 layer as described; it does not by itself control *shard* fetch order — the same asterisk as
-seg-alignment above.)
+[seg-alignment](#ideal-feature-addition-seg-aligned-partitioning) above.)
 
 ### v0 execution: assume spatially-clustered (or small) input
 
@@ -398,7 +429,8 @@ Points to weigh:
   result collection, failure/retry semantics, and resumability. These are exactly where the
   backends diverge, so the interface is only as honest as its weakest guarantee.
 - **Resumability is not automatically free.** The "skip blocks whose output already exists"
-  claim (see Output & resumability) requires (a) the per-block write to be **idempotent** and
+  claim (see [Output & resumability](#output--resumability)) requires (a) the per-block write
+  to be **idempotent** and
   (b) block keys to be **stable across reruns**. A partial/failed task must not leave a
   half-written output that looks complete. The simplest robust pattern — one immutable file per
   block, written atomically (temp name + rename, or write-then-commit) — sidesteps most of
@@ -411,7 +443,8 @@ Points to weigh:
   reintroduces it.
 - **CV concurrency composes differently under each backend.** The "let CV do IO concurrency
   with green threads, don't nest CV's `parallel=` multiprocessing under a process-based
-  backend" guidance (see Parallelism) interacts with the backend choice: a thread backend and a
+  backend" guidance (see [Parallelism](#parallelism-two-nested-levels)) interacts with the
+  backend choice: a thread backend and a
   process/Celery backend impose different constraints on how many in-flight GETs and how much
   LRU each worker should get.
 - **CV-instance reuse assumes worker lifetime.** Reusing CV instances keyed by segmentation
@@ -444,7 +477,8 @@ These extend the four-stage core and are to be refactored into discrete feature 
     repartition/shuffle feature (or the single-fat-node path).
 - **Seg-aligned partitioning** — replace the simple fixed grid with a partition function keyed
   to the segmentation grid (`chunk_size` / `voxel_offset` from `cv.info`) for guaranteed
-  single-fetch. See Design → "Ideal (feature addition)".
+  single-fetch. See
+  [seg-aligned partitioning](#ideal-feature-addition-seg-aligned-partitioning).
 - **Root ids / agglomeration** — add a chunkedgraph `get_roots` stage after supervoxel lookup
   (different bottleneck: REST API, batched, timestamped).
 - **Repartition / shuffle for unclustered-at-scale input** — lift v0's "clustered or small"
@@ -485,18 +519,21 @@ These extend the four-stage core and are to be refactored into discrete feature 
 - **KV-store sink** — replace/augment the parquet/delta write stage with a cloud KV sink.
 - **Long-lived listener** — a persistent cluster that listens for lookup requests instead of a
   one-off script run over a fixed payload.
-- **Dense vs. sparse decode flag** — already sketched above; formalize as a per-run option.
+- **Dense vs. sparse decode flag** — already sketched
+  [above](#dense-vs-sparse-decode-flag); formalize as a per-run option.
 - **Disk cache** — optional per-worker disk cache as an eviction hedge. Turns eviction from
   "re-GET cloud" into "re-read local disk" — a cheap hedge that makes block sizing less
   critical. May not persist on ephemeral workers; strong on a single fat node.
 - **Tunable block sizing** — expose block size (in segmentation-chunk multiples) as a
-  parameter with a sensible default, jointly tuned with the worker LRU budget (see Intra-block
-  memory). The crux tradeoff: too small → task overhead + poor GET batching; too large →
+  parameter with a sensible default, jointly tuned with the worker LRU budget (see
+  [Intra-block memory](#intra-block-memory-lru-reliance-and-point-ordering)). The crux
+  tradeoff: too small → task overhead + poor GET batching; too large →
   the block's occupied (compressed) chunk set overflows the LRU and the eviction leak returns —
   unless intra-block chunk-coherent / SFC point ordering keeps the live working set small.
 - **Intra-block point ordering** — sort each block's points chunk-coherently (or by Z-order /
   Hilbert as a cheap approximation) before handing them to `scattered_points`, shrinking the
-  LRU requirement from the whole block to a working window (see Intra-block memory). Pure
+  LRU requirement from the whole block to a working window (see
+  [Intra-block memory](#intra-block-memory-lru-reliance-and-point-ordering)). Pure
   input-ordering; no dependence on CV cache internals.
 - **Pluggable multi-node executor** — start from CV threading + chunk-coherent point ordering
   on a single node (no distributed backend), then add a distributed backend purely as the
