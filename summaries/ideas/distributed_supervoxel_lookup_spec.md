@@ -1,8 +1,9 @@
 # Distributed Point → Supervoxel Lookup — Design Spec
 
-Status: exploratory / pre-implementation. This is a thinking document, not a committed API.
+This is a thinking document, not a committed API. Feedback is welcome.
 
 - [Distributed Point → Supervoxel Lookup — Design Spec](#distributed-point--supervoxel-lookup--design-spec)
+  - [Motivation](#motivation)
   - [Basic shape](#basic-shape)
   - [Key findings from existing code](#key-findings-from-existing-code)
     - [`cloudvolume.scattered_points` is already smart](#cloudvolumescattered_points-is-already-smart)
@@ -21,6 +22,17 @@ Status: exploratory / pre-implementation. This is a thinking document, not a com
   - [Open decision points](#open-decision-points)
     - [Decide on choice of parallelization backend (or support multiple)](#decide-on-choice-of-parallelization-backend-or-support-multiple)
   - [Possible feature additions](#possible-feature-additions)
+
+## Motivation
+
+I am finding myself needing to look up supervoxels for large numbers of points to link
+to the chunkedgraph. I often use Cloudvolume's `scattered_points`, but that does not
+handle distribution over many workers and as far as I know relies on the LRU cache for
+smart batching of nearby-in-space lookups. The code in materialization for ingesting
+annotations is conceptually similar but is locked in to that system. And because I am
+working in the parquet/delta lake world a lot, I would prefer a system that at least is
+capable of IO from those formats. I also don't want to reinvent the wheel and want to
+reuse as much existing tooling as possible.
 
 ## Basic shape
 
